@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OUTCRY · pure-PG terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="scan"></div>
+
+<!-- ░░ AUTH GATE ░░ -->
+<div id="gate">
+  <div class="boot">
+    <div class="boot__bar"><span class="dot"></span><span class="label">secure session · gotrue oauth2</span></div>
+    <div class="boot__body">
+      <div class="wordmark">OUTCRY<small>pure-postgres exchange terminal</small></div>
+      <p class="tag">Authenticate to open a trading session. PostgREST · Realtime · Auth — no app server in the path.</p>
+      <div class="oauth">
+        <button class="btn" data-oauth="github">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5Z"/></svg>
+          Continue with GitHub
+        </button>
+        <button class="btn" data-oauth="google">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.4Z"/><path fill="currentColor" d="M12 22c2.7 0 4.9-.9 6.6-2.4l-3.2-2.5c-.9.6-2 .9-3.4.9-2.6 0-4.8-1.7-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22Z"/><path fill="currentColor" d="M6.4 13.9a6 6 0 0 1 0-3.8V7.5H3.1a10 10 0 0 0 0 9l3.3-2.6Z"/><path fill="currentColor" d="M12 6c1.5 0 2.8.5 3.8 1.5l2.8-2.8A10 10 0 0 0 3.1 7.5l3.3 2.6C7.2 7.7 9.4 6 12 6Z"/></svg>
+          Continue with Google
+        </button>
+      </div>
+      <div class="divider">or with email</div>
+      <div class="field"><span class="label">email</span><input id="email" type="email" autocomplete="email" placeholder="trader@outcry.dev" /></div>
+      <div class="field"><span class="label">password</span><input id="password" type="password" autocomplete="current-password" placeholder="••••••••" /></div>
+      <button class="btn btn--go" id="emailGo">Access terminal →</button>
+      <button class="swap" id="swapMode">No account? Register →</button>
+      <div class="msg" id="authMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ░░ TERMINAL ░░ -->
+<div id="app">
+  <header>
+    <span class="brand">OUTCRY</span>
+    <div class="sym-pick" id="symPick"></div>
+    <div class="ticker"><span class="px mono-num" id="lastPx">—</span><span class="meta" id="tickMeta">spread —</span></div>
+    <span class="spacer"></span>
+    <span class="conn"><span class="dot off" id="connDot"></span><span id="connTxt">connecting</span></span>
+    <span class="who">⬢ <b id="whoami">—</b></span>
+    <button class="swap" id="logout">Logout</button>
+  </header>
+
+  <main>
+    <!-- ORDER BOOK -->
+    <section class="panel" id="book">
+      <div class="panel__h"><span class="label">Order Book · L2</span><span class="label" id="bookSym"></span></div>
+      <div class="panel__b" style="display:flex;flex-direction:column;padding:0">
+        <div class="ob" style="flex:1">
+          <div class="ob__col ob asc"><div class="ob__rows" id="asks"></div></div>
+          <div class="ob__mid"><span class="px mono-num glow" id="midPx">—</span><span class="s mono-num" id="spreadTxt">—</span></div>
+          <div class="ob__col"><div class="ob__rows" id="bids"></div></div>
+        </div>
+        <div class="imb" title="bid/ask imbalance (wasm)"><i id="imbBar" style="width:50%"></i></div>
+        <svg class="depth" id="depth" preserveAspectRatio="none" viewBox="0 0 300 120"></svg>
+      </div>
+    </section>
+
+    <!-- CENTER: candlestick chart + tape -->
+    <section class="panel" id="center">
+      <div class="panel__h">
+        <span class="label">Chart · <span id="chartSym">BTC_EUR</span> · OHLCV</span>
+        <div class="tf" id="tf">
+          <button data-sec="60" class="on">1m</button>
+          <button data-sec="300">5m</button>
+          <button data-sec="900">15m</button>
+          <span style="width:10px"></span>
+          <button class="ma-t sma on" data-ma="sma">MA7</button>
+          <button class="ma-t ema on" data-ma="ema">EMA25</button>
+          <button class="ma-t boll on" data-ma="boll">BOLL</button>
+          <button class="ma-t vwap on" data-ma="vwap">VWAP</button>
+          <button class="ma-t vma on" data-ma="vma">VMA</button>
+          <span class="label amber" style="margin-left:10px">wasm indicators ◉</span>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <svg id="kline" preserveAspectRatio="none" viewBox="0 0 1000 460"></svg>
+        <svg id="draw" preserveAspectRatio="none" viewBox="0 0 1000 460"></svg>
+        <div class="ohlc" id="ohlc"></div>
+        <div class="draw-tools" id="drawTools">
+          <button data-tool="cursor" class="on" title="Cursor / crosshair">✛</button>
+          <button data-tool="trend" title="Trend line">╱</button>
+          <button data-tool="hline" title="Horizontal line">─</button>
+          <button data-tool="ray" title="Ray">⟶</button>
+          <button data-tool="rect" title="Rectangle">▭</button>
+          <button data-tool="clear" title="Clear all">⌫</button>
+        </div>
+        <div class="xhair-lbl" id="xhairLbl"></div>
+      </div>
+      <div class="osc-head">
+        <div class="tf" id="oscPick">
+          <button data-osc="rsi" class="on">RSI 14</button>
+          <button data-osc="macd">MACD</button>
+          <button data-osc="kdj">KDJ</button>
+          <button data-osc="atr">ATR</button>
+          <button data-osc="off">off</button>
+          <span class="label amber" style="margin-left:8px">wasm oscillators ◉</span>
+        </div>
+        <span class="ohlc" id="oscVal" style="position:static"></span>
+      </div>
+      <div class="osc-wrap" id="oscWrap"><svg id="osc" preserveAspectRatio="none" viewBox="0 0 1000 130"></svg></div>
+      <div class="tape-head"><span class="label">Trade Tape · md:broadcast</span></div>
+      <div class="panel__b" id="tape" style="flex:none;height:150px"></div>
+    </section>
+
+    <!-- RIGHT: ticket + wallet -->
+    <section class="panel" id="right">
+      <div class="panel__h"><span class="label">Order Entry</span><span class="label" id="ticketSym"></span></div>
+      <div class="panel__b" style="overflow-y:auto">
+        <div class="ticket">
+          <div class="seg"><button class="buy on" data-side="BUY">Buy / Bid</button><button class="sell" data-side="SELL">Sell / Ask</button></div>
+          <div class="seg small" id="otype"><button data-ot="LIMIT" class="on">Limit</button><button data-ot="MARKET">Market</button></div>
+          <div class="inp" id="priceWrap"><span class="label">Limit Price</span><input id="oPrice" class="mono-num" type="number" step="0.01" value="100.00" /></div>
+          <div class="inp"><span class="label">Amount (base)</span><input id="oAmount" class="mono-num" type="number" step="0.0001" value="1" /></div>
+          <div class="inp"><span class="label">Time in Force</span><select id="oTif"><option>GTC</option><option>IOC</option><option>FOK</option></select></div>
+          <div class="preview">
+            <div class="r"><span>Est. cost / proceeds</span><b id="pvCost">—</b></div>
+            <div class="r"><span>Est. fill VWAP</span><b id="pvVwap">—</b></div>
+            <div class="r"><span class="wasm-tag">↳ computed in wasm (banker's round)</span><span></span></div>
+          </div>
+        </div>
+        <button class="submit buy" id="place">Place Buy Order</button>
+        <div class="wallet">
+          <span class="label">Wallet · request</span>
+          <div class="row2">
+            <select id="wDir"><option value="DEPOSIT">Deposit</option><option value="WITHDRAWAL">Withdraw</option></select>
+            <select id="wCur"><option>EUR</option><option>BTC</option></select>
+            <input id="wAmt" class="mono-num" type="number" step="1" value="100" />
+          </div>
+          <button id="wGo">Submit request →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOTTOM-LEFT spanned by book; BOTTOM: open orders + balances under center+right -->
+    <section class="panel" id="blotter" style="grid-column:2 / 4; grid-row:2">
+      <div class="panel__h">
+        <div class="subtabs" id="blotTabs">
+          <button data-tab="orders" class="on">Open Orders</button>
+          <button data-tab="balances">Balances</button>
+          <button data-tab="wallet">Wallet</button>
+        </div>
+        <span class="label" id="blotCount"></span>
+      </div>
+      <div class="panel__b" id="blotBody"></div>
+    </section>
+  </main>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

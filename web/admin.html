@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OUTCRY · back-office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="admin.css" />
+</head>
+<body class="admin">
+<div class="scan"></div>
+
+<!-- gate: service-role key -->
+<div id="gate">
+  <div class="boot">
+    <div class="boot__bar"><span class="dot"></span><span class="label">privileged · service_role plane</span></div>
+    <div class="boot__body">
+      <div class="wordmark">OUTCRY<small>back-office terminal</small></div>
+      <p class="tag" style="color:var(--coral)">⚠ This console uses the <b>service_role</b> key — full admin, bypasses RLS. Use only on a trusted machine. The key is kept in <b>sessionStorage</b> and cleared on lock.</p>
+      <div class="field"><span class="label">API URL</span><input id="api" value="http://127.0.0.1:54321" /></div>
+      <div class="field"><span class="label">service_role key</span><input id="svc" type="password" placeholder="eyJ…" /></div>
+      <button class="btn btn--go" id="enter" style="background:var(--amber);border-color:var(--amber)">Open back-office →</button>
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <span class="brand">OUTCRY<span style="color:var(--amber)">/ADMIN</span></span>
+    <span class="spacer"></span>
+    <span class="who">recon <b id="reconBadge">—</b></span>
+    <button class="swap" id="refresh">↻ Refresh</button>
+    <button class="swap" id="lock">Lock</button>
+  </header>
+
+  <div class="adash">
+    <!-- stats -->
+    <div class="stats" id="stats"></div>
+
+    <!-- approvals -->
+    <section class="panel">
+      <div class="panel__h"><span class="label">Wallet Approvals · pending</span><span class="label" id="apprCount"></span></div>
+      <div class="panel__b" id="approvals"></div>
+    </section>
+
+    <!-- reconciliation -->
+    <section class="panel">
+      <div class="panel__h"><span class="label">Reconciliation · invariants</span><span class="label" id="reconWhen"></span></div>
+      <div class="panel__b" id="recon"></div>
+    </section>
+
+    <!-- accounts -->
+    <section class="panel span2">
+      <div class="panel__h"><span class="label">Accounts</span><span class="label" id="acctCount"></span></div>
+      <div class="panel__b" id="accounts"></div>
+    </section>
+
+    <!-- fees -->
+    <section class="panel">
+      <div class="panel__h"><span class="label">Fees</span></div>
+      <div class="panel__b">
+        <div id="fees"></div>
+        <div class="adm-form">
+          <div class="row3"><input id="feeType" placeholder="TAKER_FEE" /><input id="feeCur" placeholder="EUR" /><input id="feePct" type="number" step="0.01" placeholder="% e.g. 0.1" /></div>
+          <button class="btn-sm" id="setFee">Set fee</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- risk -->
+    <section class="panel">
+      <div class="panel__h"><span class="label">Instrument Risk</span></div>
+      <div class="panel__b">
+        <div id="risk"></div>
+        <div class="adm-form">
+          <div class="row3"><input id="rInst" placeholder="BTC_EUR" /><input id="rAmt" type="number" placeholder="max amt" /><input id="rNot" type="number" placeholder="max notional" /></div>
+          <div class="row3"><input id="rBand" type="number" step="0.1" placeholder="band %" /><button class="btn-sm" id="setRisk" style="grid-column:span 2">Set risk</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- audit -->
+    <section class="panel span2">
+      <div class="panel__h"><span class="label">Admin Audit Log</span><span class="label" id="auditCount"></span></div>
+      <div class="panel__b" id="audit"></div>
+    </section>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+<script type="module" src="admin.js"></script>
+</body>
+</html>

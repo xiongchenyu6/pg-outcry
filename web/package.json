@@ -1,0 +1,9 @@
+{
+  "name": "outcry-terminal",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:wasm": "asc wasm/orderbook.ts --outFile public/orderbook.wasm --optimize --runtime stub --exportRuntime"
+  },
+  "devDependencies": { "assemblyscript": "^0.27.31" }
+}

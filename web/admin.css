@@ -1,0 +1,35 @@
+/* OUTCRY back-office — amber-accented admin skin over the phosphor base */
+body.admin { --accent: var(--amber); }
+body.admin .brand { color: var(--amber); text-shadow: 0 0 8px rgba(255,180,84,.4); }
+body.admin #app { display: none; height: 100%; grid-template-rows: 46px 1fr; position: relative; z-index: 2; }
+body.admin #app.live { display: grid; }
+
+.adash { overflow: auto; padding: 1px; background: var(--line);
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px; align-content: start; }
+.adash .stats { grid-column: 1 / 3; display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--line); }
+.stat { background: var(--bg-panel); padding: 12px 14px; }
+.stat .n { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .n.warn { color: var(--amber); } .stat .n.bad { color: var(--coral); } .stat .n.ok { color: var(--phos); }
+.stat .l { font-family: var(--cond); text-transform: uppercase; letter-spacing: .14em; font-size: 10px; color: var(--ink-dim); margin-top: 2px; }
+.adash .panel { min-height: 180px; max-height: 360px; }
+.adash .panel.span2 { grid-column: 1 / 3; }
+.panel__b { padding: 0; }
+
+.btn-sm { font-family: var(--cond); text-transform: uppercase; letter-spacing: .1em; font-size: 11px;
+  border: 1px solid var(--line); background: var(--bg-raised); color: var(--ink); padding: 6px 12px; cursor: pointer; }
+.btn-sm:hover { border-color: var(--phos-dim); color: var(--phos); }
+.act { display: flex; gap: 4px; }
+.act button { font-family: var(--cond); text-transform: uppercase; letter-spacing: .08em; font-size: 10px;
+  border: 1px solid var(--line); background: transparent; cursor: pointer; padding: 3px 9px; }
+.act .ok { color: var(--phos); border-color: var(--phos-dim); } .act .ok:hover { background: rgba(78,247,168,.12); }
+.act .no { color: var(--coral); border-color: rgba(255,93,108,.4); } .act .no:hover { background: rgba(255,93,108,.12); }
+
+.adm-form { padding: 10px 12px; border-top: 1px solid var(--line); display: grid; gap: 7px; }
+.adm-form .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.adm-form input { background: #05080a; border: 1px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 7px; }
+.adm-form input:focus { outline: none; border-color: var(--amber); }
+
+.recon-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; border-bottom: 1px solid rgba(120,150,138,.07); }
+.recon-row .nm { font-size: 12px; }
+.recon-row .v { font-family: var(--cond); letter-spacing: .1em; font-size: 11px; }
+.recon-row .v.PASS { color: var(--phos); } .recon-row .v.FAIL { color: var(--coral); }
