@@ -15,6 +15,8 @@ Matching · Settlement · Wallet · Risk · Realtime · Auth — **no applicatio
 > ⚠️ **Reference / educational software — not independently audited.** Don't custody real funds without your own audit & compliance review. See [SECURITY.md](./SECURITY.md). / **参考与教育用途，未经独立审计**；未经自审与合规审查请勿托管真实资金。
 
 
+**[▶ Live UI demo](https://xiongchenyu6.github.io/pg-outcry/)** (static terminal on GitHub Pages — point it at any Supabase with `?api=<url>&anon=<key>`)
+
 **[★ Why pg-outcry — comparison vs top-tier exchanges & the SMB advantage (diagrams) / 为什么选我们 · 与顶级交易所对比 · 中小所优势](./WHY.md)**
 
 [English](#english) · [中文](#中文) · [Quickstart](#quickstart--快速开始) · [Deploy](./DEPLOY.md) · [Benchmark](./BENCH.md) · [Performance](./PERFORMANCE.md) · [Dev](./DEVELOPMENT.md)
