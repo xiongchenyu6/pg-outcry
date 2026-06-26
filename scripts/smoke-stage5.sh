@@ -4,9 +4,11 @@ set -euo pipefail
 API="${API:-http://127.0.0.1:54321}"
 ANON="${ANON:?set ANON}"; SERVICE="${SERVICE:?set SERVICE}"
 PGURL="${PGURL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}"
+. "$(dirname "$0")/_lib.sh"
 if [ "${RESET:-1}" = "1" ]; then echo "(resetting db)"; supabase db reset >/dev/null 2>&1; fi
+wait_ready
 
-signup(){ curl -s -X POST "$API/auth/v1/signup" -H "apikey: $ANON" -H "Content-Type: application/json" -d "{\"email\":\"$1\",\"password\":\"password123\"}" | jq -r '.access_token + " " + .user.id'; }
+signup(){ signup_jwt "$1"; }
 urpc(){ curl -s -X POST "$API/rest/v1/rpc/$2" -H "apikey: $ANON" -H "Authorization: Bearer $1" -H "Content-Type: application/json" -d "$3"; }
 arpc(){ curl -s -X POST "$API/rest/v1/rpc/$1" -H "apikey: $SERVICE" -H "Authorization: Bearer $SERVICE" -H "Content-Type: application/json" -d "$2"; }
 msg(){ echo "$1" | jq -r '.message // .code // .'; }

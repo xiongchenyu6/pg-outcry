@@ -7,12 +7,11 @@ ANON="${ANON:?set ANON}"
 SERVICE="${SERVICE:?set SERVICE to the service_role key}"
 PGURL="${PGURL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}"
 
+. "$(dirname "$0")/_lib.sh"
 if [ "${RESET:-1}" = "1" ]; then echo "(resetting db)"; supabase db reset >/dev/null 2>&1; fi
+wait_ready
 
-signup() { # -> "access_token uid"
-  curl -s -X POST "$API/auth/v1/signup" -H "apikey: $ANON" -H "Content-Type: application/json" \
-    -d "{\"email\":\"$1\",\"password\":\"password123\"}" | jq -r '.access_token + " " + .user.id'
-}
+signup() { signup_jwt "$1"; }   # -> "access_token uid", with retries
 admin_rpc() { curl -s -X POST "$API/rest/v1/rpc/$1" -H "apikey: $SERVICE" -H "Authorization: Bearer $SERVICE" -H "Content-Type: application/json" -d "$2"; }
 user_rpc()  { curl -s -X POST "$API/rest/v1/rpc/$2" -H "apikey: $ANON" -H "Authorization: Bearer $1" -H "Content-Type: application/json" -d "$3"; }
 user_get()  { curl -s "$API/rest/v1/$2" -H "apikey: $ANON" -H "Authorization: Bearer $1"; }
