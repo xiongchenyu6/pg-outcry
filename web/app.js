@@ -570,6 +570,12 @@ async function refreshBlotter() {
 // ============================================================ BOOT
 (async () => {
   await loadWasm();
+  // connectivity hint (e.g. the hosted Pages demo with no backend configured yet)
+  let reachable = false;
+  try { reachable = (await fetch(CONFIG.API + "/auth/v1/health")).ok; } catch {}
+  if (!reachable) {
+    el("authMsg").innerHTML = `No backend reachable at <code>${CONFIG.API}</code>. This is the live UI — point it at a Supabase by adding <code>?api=&lt;url&gt;&amp;anon=&lt;key&gt;</code> to the URL, or run the stack locally (see the README).`;
+  }
   const { data: { session } } = await sb.auth.getSession();
   if (session) enterTerminal(session);
 })();
