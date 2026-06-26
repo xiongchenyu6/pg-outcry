@@ -13,7 +13,7 @@ Internal checklist + post drafts for announcing pg-outcry. Not part of the produ
 - [ ] **Live demo backend**: a hosted Supabase project; share a link with creds baked in:
       `https://xiongchenyu6.github.io/pg-outcry/?api=https://<ref>.supabase.co&anon=<anon key>`
       (the app reads `?api=&anon=` and persists them). Seed it: `scripts/seed-demo.sh` + `scripts/seed-candles.sh`.
-- [ ] Social-preview image (repo Settings → Social preview) — use a terminal screenshot.
+- [x] Hero + admin screenshots rendered (web/docs/hero.png, admin.png). TODO(you): set repo Social-preview image (Settings, UI-only) using hero.png
 
 ## Capturing visuals (local)
 ```bash

@@ -26,6 +26,13 @@ Matching · Settlement · Wallet · Risk · Realtime · Auth — **no applicatio
 
 <sub>↑ the OUTCRY terminal — order book + candlesticks (SMA/EMA/Bollinger/VWAP) + volume + RSI, rendered from the real WASM engine & live data. / 上图为 OUTCRY 终端，全部由真实 WASM 引擎 + 实时数据渲染。</sub>
 
+
+<details><summary><b>Back-office console</b> (approvals · reconciliation · accounts · audit) / 管理后台</summary>
+
+<img src="web/docs/admin.png" alt="OUTCRY back-office — wallet approvals, reconciliation invariants (all PASS), accounts, admin audit log" width="100%"/>
+
+</details>
+
 </div>
 
 ---
