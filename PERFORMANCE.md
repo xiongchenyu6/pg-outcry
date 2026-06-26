@@ -14,7 +14,7 @@ Status of the six directives. ✅ = implemented & verified, ◐ = partially done
 
 ---
 
-## 1. Shard by symbol (按 symbol 分片)
+## 1. Shard by symbol
 
 **Done:** matching is already serialized *per instrument* via `pg_advisory_xact_lock(instrument_id)` (`9100`/`9500`). Different symbols never block each other — they run fully concurrently on one DB. This is logical sharding of the *critical section*.
 
@@ -41,7 +41,7 @@ but it's now a tiny UNLOGGED table, so there's no point.)
 **Next (multi-node): route symbols to separate Supabase projects.**
 Each project is a self-contained pure-PG engine owning a disjoint symbol set. A thin stateless router (or PostgREST in front of `pg_cat`/foreign tables) maps `symbol → project`. No cross-symbol transactions exist in a CEX (an order touches one book), so this shards cleanly. Cross-project: a shared identity/wallet project, or replicate balances per shard with the wallet as system-of-record.
 
-## 2. Hot data in memory (热数据内存化) — ✅ DONE `9730`
+## 2. Hot data in memory — ✅ DONE `9730`
 
 The live book (`book_order`, `price_level`) is pure derived state, rebuildable from
 the durable `trade_order` rows. Both are now **UNLOGGED**: writes skip WAL (big saving
@@ -52,7 +52,7 @@ removed from the Postgres Changes publication. `rebuild_book()` reconstructs bot
 open orders after an unclean shutdown (UNLOGGED tables come back empty on crash) — run it
 once on startup. Verified: settlement still passes; rebuild restores the book exactly.
 
-## 3. Cold data partitioning (冷数据分区) — ✅ DONE `9640`
+## 3. Cold data partitioning — ✅ DONE `9640`
 
 `trade`, `transfer_ledger_entry`, `instrument_account_ledger_entry` (0 incoming FKs,
 append-only, unbounded) recreated as **monthly RANGE partitions on `created_at`**, PK
@@ -66,7 +66,7 @@ partitioned tables. Old partitions can be `DETACH`ed for compression/export.
 tables (even with `publish_via_partition_root`). So `trade` was removed from Postgres
 Changes and its tape moved to Broadcast — see #4.
 
-## 4. Async market data (行情异步化) — ✅ DONE `9720`
+## 4. Async market data — ✅ DONE `9720`
 
 Both public feeds moved off Postgres Changes to **Broadcast** on topic `md:<symbol>`:
 - **L2 book** (`event:'l2'`, coalesced): an AFTER trigger on `price_level` marks the
@@ -86,11 +86,11 @@ market data — message rate is now bounded by the tick interval. Clients subscr
 > Realtime warm-up: after a `supabase db reset`, the realtime container needs a few
 > seconds before broadcast subscriptions deliver; scripts settle ~3.5s.
 
-## 5. Append-only ledger (账本 append-only) — ✅ DONE
+## 5. Append-only ledger — ✅ DONE
 
 `9630_reconciliation.sql`: `BEFORE UPDATE OR DELETE` triggers on `transfer_ledger_entry` and `instrument_account_ledger_entry` raise `append_only_ledger`. The engine only ever INSERTs entries, so this is invisible to normal operation and guarantees balances are always re-derivable. `reconcile()` audits 5 invariants (cash==ledger, double-entry balanced, reservations sane, approved-wallet-has-transfer, issuance conserved). Verified by `scripts/smoke-stage7.sh`.
 
-## 6. Reduce WAL pressure (减少 WAL 压力) — ✅ (first pass)
+## 6. Reduce WAL pressure — ✅ (first pass)
 
 **Done `9710`:** `trade`, `trade_order`, `book_order`, `wallet_request` switched from REPLICA IDENTITY FULL → DEFAULT (PK). FULL writes the whole old row to WAL on every UPDATE/DELETE; DEFAULT writes only the PK, while Postgres Changes still delivers the NEW tuple. Realtime verified unaffected (`smoke-realtime`, `smoke-stage6`). `price_level` kept FULL so L2 DELETE events carry price/side.
 

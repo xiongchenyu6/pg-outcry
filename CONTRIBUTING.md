@@ -1,6 +1,6 @@
-# Contributing / 贡献指南
+# Contributing
 
-Thanks for your interest! / 感谢你的关注！
+Thanks for your interest!
 
 ## Dev setup
 ```bash
@@ -20,7 +20,7 @@ export SERVICE="$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
 ## Licensing
 This project is **AGPL-3.0** (the matching core derives from
 [tolyo/open-outcry](https://github.com/tolyo/open-outcry), AGPL-3.0). By contributing you agree
-your contributions are licensed under AGPL-3.0. / 本项目为 AGPL-3.0；提交即表示你的贡献以 AGPL-3.0 授权。
+your contributions are licensed under AGPL-3.0.
 
 ## Security
 Do not file public issues for vulnerabilities — see [SECURITY.md](./SECURITY.md).

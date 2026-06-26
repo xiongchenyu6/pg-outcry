@@ -1,9 +1,9 @@
-# Launch playbook (Reddit / HN) / 发布预案
+# Launch playbook (Reddit / HN)
 
 Internal checklist + post drafts for announcing pg-outcry. Not part of the product.
 
 ## Pre-flight checklist
-- [x] README (bilingual, badges, diagram, disclaimer)
+- [x] README (English, badges, diagram, disclaimer)
 - [x] WHY.md (top-tier comparison, 9 diagrams)
 - [x] BENCH.md + `scripts/bench.sh` (reproducible numbers)
 - [x] LICENSE (AGPL-3.0) + NOTICE, SECURITY.md, CONTRIBUTING.md
