@@ -41,14 +41,21 @@ Gateway + Keycloak, OpenCEX wires Twilio/Sumsub/Scorechain keys. pg-outcry's bet
 **accounting is already correct and durable in-DB**, so you attach these at the edges and the
 database stays the system-of-record.
 
-- **Blockchain custody** — the one feature that separates "engine" from "product". Postgres can't
-  watch a chain or sign transactions, so this needs a thin **off-DB wallet-gateway worker**. The
-  ledger half is already done (`request_deposit` / `approve_wallet_request` / reservation +
-  settlement); the gateway: (1) derives a deposit address per user, (2) watches the chain and calls
-  the deposit-credit path on N confirmations (idempotent by txid), (3) signs & broadcasts approved
-  withdrawals. **Use public testnets** for a real, free, no-real-funds demo — BTC signet/testnet,
-  Ethereum **Sepolia**, TRON **Shasta** (all have faucets). Roadmap item; the SQL side can be
-  scaffolded (address table + idempotent credit RPC + withdrawal queue) with an example worker.
+- **Blockchain custody** — the one feature that separates "engine" from "product". It splits in two:
+  - **Deposits — doable in pure Postgres.** `pg_cron` (1.6, sub-minute) + `pg_net` (outbound HTTP)
+    can poll a chain RPC/explorer and credit deposits **inside the database**: a cron job calls
+    `net.http_post` to a JSON-RPC node (e.g. Sepolia `eth_getLogs` for ERC-20 `Transfer`) or an
+    explorer (Blockstream/mempool.space for BTC, Tronscan for TRON); a follow-up tick parses
+    `net._http_response` as `jsonb` and, for each new tx **idempotent by txid** past **N
+    confirmations**, runs the deposit-credit path. No external service — unlike peatio/OpenCEX/OPEX,
+    which all run a separate gateway. **Use public testnets** (BTC signet, Ethereum **Sepolia**,
+    TRON **Shasta**) for a free, no-real-funds demo.
+  - **Withdrawals + HD address derivation — need a signer.** `pgcrypto` has no secp256k1/keccak, so
+    building & **signing** a raw transaction (and deriving per-user addresses) can't be done in stock
+    SQL. Either a signing **extension** (C / `plpython3u` / `plv8` — keeps it in-DB but puts hot keys
+    in the database, a real security tradeoff) or a **tiny external signer** (the DB still decides
+    *what* to send; broadcasting is just `pg_net`). Roadmap: scaffold the pure-PG deposit watcher
+    plus a withdrawal queue, with the signer as the only external piece.
 - **KYC / KYT / SMS / fiat** — vendor API integrations. pg-outcry exposes the *hooks* (account
   status, tiers, limits) and you plug a vendor into the status field. KYC itself is deliberately
   **out of scope** — small/mid venues this targets often don't need vendor KYC to start.

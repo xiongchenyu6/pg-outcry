@@ -39,12 +39,17 @@
 OpenCEX 接 Twilio/Sumsub/Scorechain 的 key。pg-outcry 的赌注是：**账本在库内已经正确且持久**，
 因此你在边缘接上这些组件，数据库始终是 system-of-record。
 
-- **区块链托管** —— 把「引擎」和「产品」区分开的那一项。Postgres 无法监听链、也无法签名交易，所以这需要一个
-  轻量的**库外钱包网关 worker**。账本那半已经做好（`request_deposit` / `approve_wallet_request` /
-  冻结 + 结算）；网关负责：(1) 为每个用户派生充值地址，(2) 监听链、达到 N 个确认后调用入账路径（按 txid 幂等），
-  (3) 对已批准的提现进行签名并广播。**用公开测试网**做一个真实、免费、无真实资金的演示 —— BTC signet/testnet、
-  以太坊 **Sepolia**、TRON **Shasta**（都有水龙头）。这是路线图项；SQL 那半（地址表 + 幂等入账 RPC + 提现队列）
-  可以先搭好，并配一个示例 worker。
+- **区块链托管** —— 把「引擎」和「产品」区分开的那一项。它分成两半：
+  - **充值 —— 纯 Postgres 可做。** `pg_cron`（1.6，支持秒级）+ `pg_net`（库内对外 HTTP）可以**在库内**
+    轮询链上 RPC/浏览器并入账：cron 任务用 `net.http_post` 调 JSON-RPC 节点（如 Sepolia 的
+    `eth_getLogs` 监听 ERC-20 `Transfer`）或浏览器 API（BTC 用 Blockstream/mempool.space，TRON 用
+    Tronscan）；下一拍把 `net._http_response` 当 `jsonb` 解析，对每笔**按 txid 幂等**、达到 **N 个确认**的
+    新交易走入账路径。无需外部服务 —— 而 peatio/OpenCEX/OPEX 都跑一个独立网关。**用公开测试网**
+    （BTC signet、以太坊 **Sepolia**、TRON **Shasta**）做免费、无真实资金的演示。
+  - **提现 + HD 地址派生 —— 需要签名器。** `pgcrypto` 没有 secp256k1/keccak，所以构造并**签名**原始交易
+    （以及派生每个用户的地址）无法用原生 SQL 完成。要么用一个签名**扩展**（C / `plpython3u` / `plv8`
+    —— 留在库内，但热私钥进了数据库，是真实的安全权衡），要么用一个**极小的外部签名器**（仍由数据库决定
+    *发什么*；广播只是 `pg_net`）。路线图：先搭好纯 PG 的充值监听 + 提现队列，签名器是唯一的外部件。
 - **KYC / KYT / 短信 / 法币** —— 都是供应商 API 集成。pg-outcry 暴露*挂载点*（账户状态、等级、限额），
   你把供应商接到状态字段上即可。KYC 本身**有意不做** —— 它面向的中小交易所起步阶段往往用不到供应商 KYC。
 
