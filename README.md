@@ -20,7 +20,7 @@ Matching · Settlement · Wallet · Risk · Realtime · Auth — **no applicatio
 
 **[★ Why pg-outcry — comparison vs top-tier exchanges & the SMB advantage (diagrams)](./WHY.md)**
 
-[Quickstart](#quickstart) · [Deploy](./DEPLOY.md) · [Benchmark](./BENCH.md) · [Tuning ladder](./TUNING.md) · [Performance](./PERFORMANCE.md) · [Dev](./DEVELOPMENT.md)
+[Demo → production](#from-demo-to-production) · [Quickstart](#quickstart) · [Deploy](./DEPLOY.md) · [Benchmark](./BENCH.md) · [Tuning ladder](./TUNING.md) · [Performance](./PERFORMANCE.md) · [Dev](./DEVELOPMENT.md)
 
 <img src="web/docs/hero.png" alt="OUTCRY terminal — order book, candlesticks with SMA/EMA/Bollinger/VWAP, volume, RSI (rendered from the live WASM engine)" width="100%"/>
 
@@ -131,6 +131,28 @@ double-entry settled* trade — not an in-memory book op. The self-host perf pro
 (`synchronous_commit=off`, native C `banker_round`, UNLOGGED book) and symbol sharding raise the
 ceiling well beyond. Reproduce: `SERVICE=<key> ./scripts/bench.sh`. Full methodology → [BENCH.md](./BENCH.md);
 step-by-step tuning ladder to the ceiling → [TUNING.md](./TUNING.md).
+
+## From demo to production
+
+The same codebase carries you from a click-to-try demo all the way to a tuned production exchange —
+each step has a doc:
+
+```mermaid
+flowchart LR
+  A["1 · Try the hosted demo<br/>(zero install)"] --> B["2 · Run it locally<br/>supabase start + db reset"]
+  B --> C["3 · Self-host high-perf<br/>native C · WAL tuning · ticker"]
+  C --> D["4 · Tune to the ceiling<br/>bench ladder + batch size"]
+  D --> E["5 · Go live<br/>harden + scale (shard by symbol)"]
+  style A fill:#10231a,stroke:#2a8f63
+  style C fill:#10231a,stroke:#4ef7a8
+  style E fill:#1a1626,stroke:#9b8cff
+```
+
+1. **Try it** — open the [live demo](https://xiongchenyu6.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1) (trading) and the [back-office](https://xiongchenyu6.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1). Nothing to install.
+2. **Run it locally** — [Quickstart](#quickstart) below: `supabase start` + `supabase db reset` gives you the whole exchange (hosted-Supabase profile in [DEPLOY.md](./DEPLOY.md#demo-deploy-to-hosted-supabase)).
+3. **Self-host the high-performance profile** — native C hot-path, WAL tunables, and the market-data ticker: `./scripts/perf-tune-local.sh` → [DEPLOY.md › Local high-performance](./DEPLOY.md#local-high-performance-self-host). What's identical across hosted vs self-host is spelled out in [DEPLOY.md](./DEPLOY.md#whats-identical-across-both).
+4. **Tune to the ceiling** — walk the [tuning ladder](./TUNING.md) and pick the [batch size](./TUNING.md#batch-order-submission-group-commit--tuning-the-batch-size) at your throughput/latency knee, measuring on your hardware with [`scripts/bench-ladder.sh`](./scripts/bench-ladder.sh) and [`scripts/bench-batch.sh`](./scripts/bench-batch.sh).
+5. **Go live** — production = self-hosted Supabase (or managed PostgreSQL + PostgREST/Realtime/GoTrue) on your own infra, **or** a paid hosted Supabase project. Apply `synchronous_commit=off` + replication/PITR for durable throughput, [shard by symbol](./PERFORMANCE.md#1-shard-by-symbol) to scale out, and complete the operator [hardening checklist](./SECURITY.md#hardening-checklist-for-operators) before custodying real funds.
 
 ## Quickstart
 
