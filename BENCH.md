@@ -4,55 +4,89 @@
 
 # Benchmark
 
-Reproducible: **[`scripts/bench.sh`](./scripts/bench.sh)** · [← README](./README.md)
+Reproducible: **[`scripts/bench.sh`](./scripts/bench.sh)** (engine) · **[`scripts/bench-batch.sh`](./scripts/bench-batch.sh)** (API) · [← README](./README.md)
 
 </div>
 
-> **What "a match" means here.** Each match in this benchmark is a *full, durable, double-entry
-> settled* trade — the taker order is matched **and** the ledger is updated on both sides
-> (≈8 inserts + 4 updates + lookups, committed to WAL). This is **not** comparable to an
-> in-memory HFT engine reporting "1M order-book ops/sec"; those are non-durable book mutations,
-> not settled trades. pg-outcry trades raw speed for **ACID correctness on every fill**.
+## Two dimensions — define them before quoting any number
 
-## Environment
+Mixing these two is the #1 way to publish a misleading benchmark. They answer different questions:
 
-| | |
-|---|---|
-| Host | 16 vCPU · 27 GiB RAM (developer machine) |
-| PostgreSQL | 17.6, **default-ish config** (`shared_buffers=128MB`, `synchronous_commit=on`, `wal_compression=off`) |
-| `banker_round` | PL/pgSQL (stock; the native C drop-in is *off* for these numbers) |
-| Build profile | **baseline** — none of the self-host perf tunables applied |
+| | **① Engine throughput** | **② API throughput** |
+|---|---|---|
+| Question | *How fast can the matching+settlement engine go?* | *What does a client get end-to-end through the API?* |
+| Measured | **server-side, in-DB** (psql loop, no network) | **over PostgREST/HTTP** (network + auth per call) |
+| Bounded by | PostgreSQL / WAL / CPU — **this is the ceiling** | dimension ① (can approach it, never exceed it) |
+| Knobs | `synchronous_commit`, sharding, WAL, indexes | **concurrency** + **batching** + round-trip latency |
+| The number readers care about | **✅ this one** | integration concern, depends on your client |
 
-Numbers below are **indicative on this box with an untuned config** — they are a floor, not a ceiling. Reproduce / run on your own hardware with `SERVICE=<key> ./scripts/bench.sh`.
+> **What "a trade" means.** Every trade here is a *full, durable, double-entry settled* fill — the
+> taker is matched **and** the ledger is written on both sides (≈8 inserts + 4 updates, committed to
+> WAL). This is **not** comparable to an in-memory HFT engine reporting "1M book ops/sec"; those are
+> non-durable book mutations. pg-outcry trades raw speed for **ACID correctness on every fill**.
 
-## Results
+---
+
+## ① Engine throughput (server-side) — the matching-engine ceiling
+
+Measured in a psql loop, **no network**, so it isolates the engine itself. This is the headline.
+
+**Environment:** 16 vCPU · 27 GiB · PostgreSQL 17.6, **untuned** (`shared_buffers=128MB`,
+`synchronous_commit=on`, `wal_compression=off`), PL/pgSQL `banker_round`. A **floor**, not a ceiling.
 
 | Metric | Result |
 |---|---|
-| **Sequential throughput** (1 connection, 1 symbol) | **~200–270 matched+settled trades/sec** |
-| Engine latency per match (server-side) | **p50 ≈ 3.5 ms · p95 ≈ 6 ms · p99 ≈ 7–11 ms** |
-| End-to-end order latency over PostgREST/HTTP | **p50 ≈ 9 ms · p95 ≈ 22 ms · p99 ≈ 66 ms** |
-| **Concurrency scaling** (6 symbols in parallel) | **~560–730 trades/sec aggregate** (≈2.5–3.7× single-symbol) |
+| **Sequential throughput** (1 connection, 1 symbol) | **~200–270 settled trades/sec** |
+| Engine latency per settled trade | **p50 ≈ 3.5 ms · p95 ≈ 6 ms · p99 ≈ 7–11 ms** |
+| **Concurrency scaling** (6 symbols in parallel) | **~560–730 trades/sec aggregate** (≈2.5–3.7×) |
 
-### Reading the results
-- **Per-symbol concurrency works.** Because matching is serialized *per instrument* with an advisory lock, independent symbols run in parallel — aggregate throughput rises with the number of symbols (6 symbols ≈ 3× one). A real venue with dozens of symbols scales further until WAL/IO bound.
-- **Single-symbol latency is millisecond-scale and durable.** ~3.5 ms p50 for a fully settled trade, every fill ACID-committed. That comfortably covers retail/regional/altcoin venues; it is **not** a co-located µs HFT engine (see §9 of [WHY.md](./WHY.md)).
+- **Per-symbol concurrency is real.** Matching is serialized *per instrument* with an advisory lock,
+  so independent symbols run fully in parallel — aggregate throughput rises with symbol count. A
+  venue with dozens of symbols scales further until WAL/IO-bound.
+- **Every fill is durable and millisecond-scale.** ~3.5 ms p50 for a fully-settled, ACID-committed
+  trade. This is the ceiling dimension ② approaches.
+- **Headroom:** `synchronous_commit=off`, native C `banker_round`, larger `shared_buffers`/`max_wal_size`,
+  and **symbol sharding across nodes** raise it well beyond — step-by-step in [TUNING.md](./TUNING.md).
 
-## Headroom — what the perf profile adds
+Reproduce: `SERVICE=<key> ./scripts/bench.sh`.
 
-These numbers use the **baseline** config. The self-host high-performance profile and tuning move the ceiling up substantially:
+---
 
-- `synchronous_commit = off` — the single biggest lever for write-heavy settlement (trades off losing the last few committed txns on crash). `scripts/perf-tune-local.sh RISKY=1`.
-- Native **C `banker_round`** drop-in (~2.8× on that hot helper) — `ext/oc_fastmath`.
-- Larger `shared_buffers` / `max_wal_size`, `wal_compression=on`.
-- **UNLOGGED** in-memory order book (already in migrations) — no WAL for the live book.
-- Horizontal: **shard by symbol** across nodes (a CEX has no cross-symbol transactions) — near-linear with shard count.
+## ② API throughput (client, over PostgREST/HTTP) — bounded by ①
 
-> Bottom line: a **single, untuned PostgreSQL** already serves hundreds of fully-settled trades/sec at millisecond latency, scaling with symbols — which is more than enough for the small/mid-size venues this is built for, with a clear, documented path to push further.
+This measures the *integration path*, not the engine. Two sub-points, kept strictly apart:
 
-## See how far it climbs
+**Latency probe (NOT throughput).** A single order, one connection, one-at-a-time, is a *latency*
+measurement: each call pays a network round-trip + auth. On the dev box that's **p50 ≈ 9 ms · p95 ≈
+22 ms** end-to-end. **Do not read "1000 / 9 ms ≈ 110 orders/s" as the system's capacity** — that's
+the latency of *one serial client*, not throughput.
 
-This page is the **floor**. For the step-by-step **tuning ladder** — how throughput rises as you
-apply each lever (`synchronous_commit=off`, symbol sharding, native C hot-path, WAL/memory sizing),
-in priority order, with a script that measures each rung on your hardware — see
-**[TUNING.md](./TUNING.md)** (`SERVICE=<key> ./scripts/bench-ladder.sh`).
+**Throughput (the real question) = concurrency × per-request, capped by ①.** Real clients use many
+concurrent connections; aggregate API throughput rises with concurrency until it meets the engine
+ceiling (①). **Batching** (`submit_orders`) is the other lever: N orders per HTTP call amortizes the
+round-trip + auth + commit, so a *single* client gets a multiple of its sequential rate. Tuning the
+batch size (throughput vs per-call latency) → [TUNING.md › batch](./TUNING.md#batch-order-submission-group-commit--tuning-the-batch-size).
+
+Reproduce: `SERVICE=<key> ./scripts/bench-batch.sh` (sweeps batch size and concurrency over HTTP).
+
+> ⚠️ **Measure on a quiet box.** Both dimensions are sensitive to other load. On a contended machine
+> (e.g. 16-core laptop already pinned by other apps) absolute numbers drop several-fold and
+> concurrency stops scaling because there are no free cores — that tells you about the box, not the
+> exchange. Compare runs back-to-back on an idle host.
+
+---
+
+## How to quote pg-outcry honestly
+
+- **"~200–270 durable, double-entry-settled trades/sec per symbol, ~560–730/sec across 6 symbols, on
+  a single untuned Postgres; scales with symbols and tuning."** ← the engine ceiling (①). This is the
+  claim to make.
+- **Not** "31 orders/sec" — that's a single serial HTTP client's *latency*, dimension ②'s probe, and
+  was taken on a busy box. It's not a throughput figure and not the engine.
+- It is **ms-scale durable**, **not** µs-scale in-memory HFT — see when *not* to use it in
+  [WHY.md](./WHY.md#9-when-not-to-use-this).
+
+> Bottom line: the engine does **hundreds of fully-settled trades/sec per symbol at millisecond
+> latency**, scaling with symbols — plenty for the small/mid venues this targets, with a documented
+> path ([TUNING.md](./TUNING.md)) to push further. The API path reaches that ceiling via concurrency
+> and batching; a single serial connection only measures latency.
