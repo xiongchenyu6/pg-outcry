@@ -1,3 +1,5 @@
+**English** · [中文](./BENCH.zh-CN.md)
+
 <div align="center">
 
 # Benchmark

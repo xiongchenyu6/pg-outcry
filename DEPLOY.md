@@ -1,3 +1,5 @@
+**English** · [中文](./DEPLOY.zh-CN.md)
+
 # Deployment
 
 Two profiles from the **same migration set**:

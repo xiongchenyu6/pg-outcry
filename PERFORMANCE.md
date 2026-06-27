@@ -1,3 +1,5 @@
+**English** · [中文](./PERFORMANCE.zh-CN.md)
+
 # Performance & scaling plan
 
 Status of the six directives. ✅ = implemented & verified, ◐ = partially done,

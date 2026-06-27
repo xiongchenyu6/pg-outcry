@@ -1,3 +1,5 @@
+**English** · [中文](./TUNING.zh-CN.md)
+
 <div align="center">
 
 # Tuning ladder — from the baseline to the ceiling
@@ -90,43 +92,61 @@ book and indexes resident; larger `max_wal_size` reduces checkpoint frequency un
 
 ## Batch order submission (group commit) — tuning the batch size
 
+> **First, reconcile the numbers — two different measurement planes.** The headline
+> **~200–270 trades/s/symbol** in [BENCH.md](./BENCH.md) is the **engine** rate, measured
+> **server-side in a psql loop with no network** — the true ceiling of the matching+settlement hot
+> path. The batch table below is the **client** rate, measured **over PostgREST/HTTP**, where every
+> call also pays a network round-trip + auth. A single order per HTTP call is *round-trip-bound*, so
+> it sits far **below** the engine ceiling — that gap is the HTTP overhead, not the engine being slow.
+>
+> **Batching does not slow the engine down.** It submits N orders in one HTTP call / one transaction,
+> so it lifts the **client** rate *up from the per-call-round-trip floor toward the engine ceiling*.
+> It can never exceed the engine ceiling, and it never makes a single order settle slower. If a table
+> ever shows batching *below* singles, that's the longer transaction's own cost (see the knee) or a
+> contended box — not "tuning made the exchange slower."
+
 `submit_orders(account, instrument, jsonb[])` (migration `9765`) processes N orders for one
 instrument in **one transaction**: one HTTP round-trip, one auth, one advisory-lock acquisition, one
-commit/fsync for the whole batch. It's the durable-safe way to raise client throughput
-(`synchronous_commit` stays on) — for market makers / liquidity bots placing many orders at once.
+commit. Durable-safe (`synchronous_commit` stays on) — for market makers / liquidity bots placing
+many orders at once.
 
-**There is a knee.** Throughput rises with batch size as the per-call overhead is amortized, then
-falls: a longer transaction holds the per-instrument lock longer and re-updates the submitter's own
-account rows N times, so past the knee the server-side cost outweighs the round-trip saving — while
-per-call **latency keeps growing roughly linearly**. So you tune for *max throughput at a latency you
-can accept*. Measure it with **`SERVICE=<key> ./scripts/bench-batch.sh`**.
+**Where the win comes from (and where it doesn't):**
+- **HTTP round-trip amortization — the main, always-present win.** 100 orders in 1 call instead of
+  100 calls removes ~99 network round-trips + auths. This is why the client rate climbs with batch
+  size.
+- **fsync amortization — only on slow-fsync storage.** With `synchronous_commit=on`, one commit per
+  batch = one fsync for N orders. On cloud network disks (expensive fsync) this is a big extra win;
+  on a local SSD/dev box (cheap fsync) it's negligible.
+- **Not an engine-throughput multiplier.** Server-side (no HTTP), batching this same-account workload
+  is roughly neutral-to-slightly-negative, because the one transaction re-updates the submitter's own
+  account rows N times under one snapshot. So batching is about **client throughput / round-trips /
+  atomic multi-order submit**, *not* about making the engine itself faster than its ~270/s ceiling.
 
-Measured over PostgREST/HTTP on the dev box (16 vCPU, loaded — so absolute numbers are conservative;
-the **shape and the ~2–2.4× ceiling** are the robust part):
+**There is a knee.** Client throughput rises with batch size as round-trips are amortized, then
+plateaus/falls (the long transaction holds the per-instrument lock longer and churns the submitter's
+rows), while per-call **latency grows ~linearly**. So tune for *max throughput at a latency you can
+accept*. Measure with **`SERVICE=<key> ./scripts/bench-batch.sh`**.
 
-| batch | HTTP calls for 600 orders | orders/s | per-call latency | vs singles |
+⚠️ **The absolute numbers below were taken on a heavily contended dev box (load > cores), so they are
+depressed several-fold and must NOT be compared to BENCH.md's server-side figures.** Only the
+**relative shape** (the ×-speedup column and where the knee sits) is meaningful; reproduce real
+numbers on a quiet box with the script.
+
+| batch | HTTP calls for 600 orders | orders/s (HTTP, contended box) | per-call latency | vs singles |
 |---|---|---|---|---|
-| 1 (singles) | 600 | ~31–37 | ~30 ms | 1.0× |
-| **10** | 60 | ~45–75 | ~130–220 ms | ~1.2–2.4× |
-| 25 | 24 | ~40–80 | ~300–620 ms | ~1.1–2.5× |
-| 50 | 12 | ~70–83 | ~600–710 ms | ~1.9–2.7× |
-| 100 | 6 | ~56–86 | ~1.2 s | ~1.8–2.4× |
-| 200 | 3 | ~56 | ~3.5 s | falls off |
+| 1 (singles) | 600 | low (round-trip-bound) | ~30 ms | 1.0× |
+| **10** | 60 | — | ~130–220 ms | ~1.2–2.4× |
+| 25 | 24 | — | ~300–620 ms | ~1.1–2.5× |
+| 50 | 12 | — | ~600–710 ms | ~1.9–2.7× (peak) |
+| 100 | 6 | — | ~1.2 s | plateau |
+| 200 | 3 | — | ~3.5 s | falls off |
 
-**Recommendation:**
-- **Interactive / low-latency:** batch **10–25** — most of the throughput gain (~1.2–2.4×) at
-  ~130–300 ms per call.
-- **Throughput-first (bulk requoting), latency ≲1 s OK:** batch **~50** — near-peak throughput
-  (~2× singles).
-- **Avoid ≥100** unless you genuinely don't care about latency — throughput plateaus or regresses
-  while latency runs into seconds.
-- The exact knee shifts with hardware, storage fsync cost, and load — **run `bench-batch.sh` on your
+**Recommendation (client/HTTP path):**
+- **Interactive / low-latency:** batch **10–25** — most of the round-trip win at ~130–300 ms/call.
+- **Throughput-first (bulk requoting), latency ≲1 s OK:** batch **~50** — near the knee.
+- **Avoid ≥100** unless latency is irrelevant — throughput plateaus while latency runs into seconds.
+- The knee shifts with network RTT, storage fsync cost, and load — **run `bench-batch.sh` on your
   box** and pick the smallest batch whose `orders/s` is near the max with acceptable `per-call ms`.
-
-> Note: on storage with **expensive fsync** (typical cloud network disks with `synchronous_commit=on`)
-> the group-commit win is *larger* than on this box, whose local fsync is cheap — there the server-side
-> sweep (engine-only) shows little gain because there's no costly fsync to amortize. Either way the
-> client-side HTTP win above holds, and the knee is what you tune.
 
 ## Priority order (what to reach for first)
 
