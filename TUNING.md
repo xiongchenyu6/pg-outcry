@@ -88,13 +88,55 @@ lever for settlement. Build: `./ext/oc_fastmath/build.sh`.
 them in `supabase/config.toml` `[db]` (self-host) and restart. Larger `shared_buffers` keeps the hot
 book and indexes resident; larger `max_wal_size` reduces checkpoint frequency under write bursts.
 
+## Batch order submission (group commit) — tuning the batch size
+
+`submit_orders(account, instrument, jsonb[])` (migration `9765`) processes N orders for one
+instrument in **one transaction**: one HTTP round-trip, one auth, one advisory-lock acquisition, one
+commit/fsync for the whole batch. It's the durable-safe way to raise client throughput
+(`synchronous_commit` stays on) — for market makers / liquidity bots placing many orders at once.
+
+**There is a knee.** Throughput rises with batch size as the per-call overhead is amortized, then
+falls: a longer transaction holds the per-instrument lock longer and re-updates the submitter's own
+account rows N times, so past the knee the server-side cost outweighs the round-trip saving — while
+per-call **latency keeps growing roughly linearly**. So you tune for *max throughput at a latency you
+can accept*. Measure it with **`SERVICE=<key> ./scripts/bench-batch.sh`**.
+
+Measured over PostgREST/HTTP on the dev box (16 vCPU, loaded — so absolute numbers are conservative;
+the **shape and the ~2–2.4× ceiling** are the robust part):
+
+| batch | HTTP calls for 600 orders | orders/s | per-call latency | vs singles |
+|---|---|---|---|---|
+| 1 (singles) | 600 | ~31–37 | ~30 ms | 1.0× |
+| **10** | 60 | ~45–75 | ~130–220 ms | ~1.2–2.4× |
+| 25 | 24 | ~40–80 | ~300–620 ms | ~1.1–2.5× |
+| 50 | 12 | ~70–83 | ~600–710 ms | ~1.9–2.7× |
+| 100 | 6 | ~56–86 | ~1.2 s | ~1.8–2.4× |
+| 200 | 3 | ~56 | ~3.5 s | falls off |
+
+**Recommendation:**
+- **Interactive / low-latency:** batch **10–25** — most of the throughput gain (~1.2–2.4×) at
+  ~130–300 ms per call.
+- **Throughput-first (bulk requoting), latency ≲1 s OK:** batch **~50** — near-peak throughput
+  (~2× singles).
+- **Avoid ≥100** unless you genuinely don't care about latency — throughput plateaus or regresses
+  while latency runs into seconds.
+- The exact knee shifts with hardware, storage fsync cost, and load — **run `bench-batch.sh` on your
+  box** and pick the smallest batch whose `orders/s` is near the max with acceptable `per-call ms`.
+
+> Note: on storage with **expensive fsync** (typical cloud network disks with `synchronous_commit=on`)
+> the group-commit win is *larger* than on this box, whose local fsync is cheap — there the server-side
+> sweep (engine-only) shows little gain because there's no costly fsync to amortize. Either way the
+> client-side HTTP win above holds, and the knee is what you tune.
+
 ## Priority order (what to reach for first)
 
 1. **`synchronous_commit=off`** (+ replication/PITR for durability) — biggest single-box win.
 2. **Shard by symbol** — the way past one box; near-linear, zero schema change.
-3. **Memory/WAL sizing** for your working set; UNLOGGED book is already on.
-4. `wal_compression` if IO- or replication-bound.
-5. Native C hot-paths last — only once you've proven the bottleneck is CPU, which for durable
+3. **Batch order submission** (`submit_orders`, batch ~10–25) — biggest *client-side* win for
+   multi-order submitters; amortizes round-trip/auth/lock/commit. Tune with `bench-batch.sh`.
+4. **Memory/WAL sizing** for your working set; UNLOGGED book is already on.
+5. `wal_compression` if IO- or replication-bound.
+6. Native C hot-paths last — only once you've proven the bottleneck is CPU, which for durable
    settlement it usually isn't.
 
 > Bottom line: the baseline already serves hundreds of fully-settled trades/sec; the ceiling is
