@@ -30,7 +30,7 @@
 | 服务端 OHLCV/K线 | ✅ | ✅ | ✅ | ◐ 在 WASM 客户端计算 |
 | 管理 / 后台 | ✅ | ✅ | ✅ | ✅ 审批/冻结/费率/风控/对账/审计 |
 | 阶梯费率（按量） | ✅ | ◐ | ◐ | ◐ 固定 maker/taker |
-| 杠杆 / 合约 / 质押 / P2P | 部分 | 部分 | — | ❌ 不在范围（现货） |
+| 质押 / 保证金 / 合约 | 商业版（OpenDAX） | — | — | ◐ **质押 ✅ 纯 SQL** · 保证金/合约规划中（[DERIVATIVES.zh-CN.md](./DERIVATIVES.zh-CN.md)） |
 | **要运行的组件数** | Rails + Barong + Finex + RabbitMQ + DB | Django + Redis + RabbitMQ + 节点 | 约 11 个微服务 + Kafka + Redis + N×PG | ✅ **1 个 Postgres + Supabase** |
 
 ## 桶 A —— 外部集成（任何交易所都要在边缘接上）
@@ -73,7 +73,7 @@ OpenCEX 接 Twilio/Sumsub/Scorechain 的 key。pg-outcry 的赌注是：**账本
 
 ## 不在范围（现货参考交易所不必追）
 
-杠杆 / 合约 / 衍生品、质押、P2P、借贷、FIX 协议 —— 都是不同的产品。见
+保证金 / 合约（进阶，见 [DERIVATIVES.zh-CN.md](./DERIVATIVES.zh-CN.md)）带真实风险、处于受监管一端；P2P、借贷、FIX 协议是不同的产品。见
 [WHY.zh-CN.md › 什么情况下别用它](./WHY.zh-CN.md#9-什么情况下别用它)。
 
 ## 结论

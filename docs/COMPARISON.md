@@ -31,7 +31,7 @@ and (B) things we can add **in pure SQL** while keeping the "whole exchange in P
 | Server-side OHLCV/candles | ✅ | ✅ | ✅ | ◐ computed client-side in WASM |
 | Admin / back-office | ✅ | ✅ | ✅ | ✅ approvals/suspend/fees/risk/recon/audit |
 | Fee tiers (volume-based) | ✅ | ◐ | ◐ | ◐ flat maker/taker |
-| Margin / futures / staking / P2P | partial | partial | — | ❌ out of scope (spot) |
+| Staking / margin / futures | commercial (OpenDAX) | — | — | ◐ **staking ✅ pure SQL** · margin/futures planned ([DERIVATIVES.md](./DERIVATIVES.md)) |
 | **Moving parts to run** | Rails + Barong + Finex + RabbitMQ + DB | Django + Redis + RabbitMQ + nodes | ~11 microservices + Kafka + Redis + N×PG | ✅ **1 Postgres + Supabase** |
 
 ## Bucket A — external integrations (every exchange bolts these on)
@@ -82,7 +82,7 @@ Ordered by leverage. The first three are **shipped (pure SQL)** — see [DEVELOP
 
 ## Out of scope (don't chase for a spot reference exchange)
 
-Margin / futures / derivatives, staking, P2P, lending, FIX protocol — different products. See
+Margin / futures (advanced, see [DERIVATIVES.md](./DERIVATIVES.md)) carry real risk and sit at the regulated end; P2P, lending, FIX protocol are different products. See
 [WHY.md › when NOT to use this](./WHY.md#9-when-not-to-use-this).
 
 ## Bottom line

@@ -1,0 +1,72 @@
+[English](./DERIVATIVES.md) · **中文**
+
+# 纯 Postgres 的衍生品与质押 —— 可行性 + 计划
+
+保证金 / 合约 / 质押能用纯 PG 做吗？有哪些扩展能帮上忙？
+[← 文档](./README.md) · [← 横向对比](./COMPARISON.zh-CN.md)
+
+> **先说结论（诚实）：** [peatio](https://github.com/openware/peatio)、
+> [OpenCEX](https://github.com/Polygant/OpenCEX)、[OPEX](https://github.com/opexdev/core) 三者的**开源版**
+> 都没有实现这些 —— 它们是现货交易所。peatio 的保证金/合约/P2P 只存在于 Openware 的*商业* OpenDAX；
+> OpenCEX/OPEX 根本不带。所以没有可抄的开源参考 —— 下面是把标准交易所架构映射到纯 PG 上。
+
+## 结论
+
+三者都能用纯 PostgreSQL 完成，**只需 `pg_cron` + `pg_net`**（已在用）—— **无需任何新的定制扩展**。
+工作量：**质押（小） < 现货保证金（中） < 永续合约（大）**。唯一天然外部的依赖是**价格预言机**
+（清算与资金费用的 index/mark 价），其获取方式与链上充值相同。真正的成本是**风险面**
+（清算、资金费用、保险基金），而不是数据库。
+
+## 扩展映射（基于实际 Supabase 镜像）
+
+| 扩展 | 作用 | 本镜像状态 |
+|---|---|---|
+| **pg_cron** | 计息 / 资金费用 / 清算 / 解质押 的定时器 | ✅ 已装 |
+| **pg_net** / **http** | 外部 index/预言机 价格拉取 | ✅ 已装 |
+| **pgmq** | 持久队列：解质押、清算、资金费用、提现（替代手写 `SKIP LOCKED`） | ✅ 可用 —— **质押解锁已在用** |
+| **pg_partman** | 自动分区时间序列（资金费用流水、mark 价历史） | ✅ 可用 |
+| **pgsodium** | 库内 ed25519 签名 → **Solana/Sui** 提现/质押交易原生签名 | ✅ 可用 |
+| **supabase_vault** | 若库内签名，加密存储热私钥 | ✅ 已装 |
+| **wrappers**（FDW） | 把外部价格 API / 交易所建模为外表（预言机） | ✅ 可用 |
+| **plpgsql_check** · **pgtap** | 静态检查 + 单测庞大的风险引擎 | ✅ 可用 |
+| **pgaudit** | 面向受监管场景的合规级审计日志 | ✅ 可用 |
+| _TimescaleDB / toolkit_ | hypertable + 连续聚合 → 服务端 OHLCV、mark/资金费用 序列 | ❌ **镜像中没有**（仅自建） |
+| _plv8 / plpython3u_ | 库内 JS/Python（如 secp256k1 库） | ❌ 不可用 |
+
+**签名要点：** **ed25519 链（Solana、Sui）**可用 `pgsodium` 在库内签名（私钥放 `supabase_vault`）。
+**secp256k1 链（BTC、所有 EVM、Tron）**没有现成扩展 → 外部签名器（当前设计）或自建 C 扩展
+（编译 `libsecp256k1`，与 `oc_fastmath` 同套路）。
+
+## 1. 质押 —— ✅ 已交付（迁移 `9930`）
+
+质押某币种、按 APR 通过「每单位累积奖励」累加器赚取奖励（MasterChef 模式，每次交互时惰性结算 —— 无需计息 cron），
+解质押带解锁期。
+
+- 资金流动复用 `process_transfer`，因此对账成立：**质押** = `WITHDRAWAL` user→MASTER（锁本金）、
+  **奖励** = `DEPOSIT` MASTER→user（发行，类似水龙头）、**解锁** = 延迟后 `DEPOSIT` MASTER→user。
+- **pgmq** 持有解质押队列（`pgmq.send(..., delay)`）；**pg_cron** 任务 `process_unbonding()`
+  消费到期消息并返还本金。
+- RPC：`stake` / `unstake` / `claim_stake_rewards`（认证）；视图 `my_stakes`（实时待领奖励）+ `stake_pools`。
+  已在 `scripts/smoke-features.mjs` 验证（质押 → 10% APR 约 10 奖励 → 解质押 → 解锁返还 → **reconcile() 全 PASS**）。
+
+## 2. 现货保证金 —— 计划中（纯 SQL）
+
+抵押借贷 → 计息（`pg_cron`）→ `place_order` 校验权益 ≥ 初始保证金 → **清算引擎**按最新成交/index 标记仓位，
+当权益 < 维持保证金时用市价单强平；保险基金兜底亏空。新增：借贷账本、保证金校验、清算监控
+（一个由 worker 消费的 **pgmq** 工作队列）。无需新扩展。
+
+## 3. 永续合约 —— 计划中（大、纯 SQL）
+
+基于仓位而非余额：
+1. **index + mark 价** —— index 来自外部现货市场，经 `pg_net`/`wrappers` 拉取（唯一外部依赖）。
+2. **资金费用** —— 多空之间周期性划转（`pg_cron`）。
+3. **未实现盈亏 / 权益**、初始/维持保证金。
+4. **清算**（**pgmq** 队列）+ **保险基金** + **ADL**（自动减仓）。
+5. 撮合仍是订单簿；结算更新**仓位 + 保证金**（与现货并行的新路径）。
+
+全是 numeric 数学；用 **pg_partman** 存资金费用/mark 价时间序列；热点资金费用/清算循环可选自建 C 扩展。
+
+## 路线图
+
+`质押 ✅ → 现货保证金 → 永续合约`。每一项都可选且带真实金融风险 —— 它们处于受监管的一端
+（[WHY.zh-CN.md §9](./WHY.zh-CN.md#9-什么情况下别用它)）；pg-outcry 的核心仍是正确性优先的**现货**交易所。

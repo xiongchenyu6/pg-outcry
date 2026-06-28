@@ -99,5 +99,20 @@ ok((await svc("mark_withdrawal_confirmed", { request_pub: wreq })).body === fals
 const wrow = (await get(S.token, `wallet_request?pub_id=eq.${wreq}&select=broadcast_txid,confirmed_at`))[0];
 ok(wrow && wrow.broadcast_txid === "0xDEADBEEF" && wrow.confirmed_at, "owner sees broadcast txid + confirmation via RLS");
 
+console.log("── Staking (pgmq unbonding + pg_cron) ──");
+const T2 = await signup("stk"); await fund(T2.pub, "EUR", 1000);
+const eur = async () => Number((await get(T2.token, "cash_balances?currency=eq.EUR&select=available"))[0]?.available || 0);
+ok((await rpc(T2.token, "stake", { currency_param: "EUR", amount_param: 100 })).status < 300, "stake 100");
+ok(await eur() === 900, "principal debited (EUR 900)");
+execSync(`psql "${PGURL}" -tAqc "update stake_pool set updated_at = now() - interval '365 days' where currency='EUR';"`);
+const reward = (await rpc(T2.token, "claim_stake_rewards", { currency_param: "EUR" })).body;
+ok(Number(reward) >= 9.9 && Number(reward) <= 10.1, `~10 reward at 10% APR (got ${reward})`);
+execSync(`psql "${PGURL}" -tAqc "update stake_config set unbond_seconds=0;"`);
+ok((await rpc(T2.token, "unstake", { currency_param: "EUR", amount_param: 100 })).status < 300, "unstake 100 (queued for unbonding)");
+ok(Number((await svc("process_unbonding")).body) >= 1, "process_unbonding releases matured principal");
+ok(Math.abs(await eur() - 1010) < 0.2, `principal returned (~EUR 1010, got ${await eur()})`);
+const rec = (await svc("reconcile")).body;
+ok(Array.isArray(rec) && rec.filter((r) => r.status !== "PASS").length === 0, "ledger still reconciles after staking");
+
 console.log(failed ? `\n${failed} FAILED` : "\nall feature smokes passed");
 process.exit(failed ? 1 : 0);
