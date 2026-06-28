@@ -14,9 +14,9 @@
 
 > ⚠️ **参考与教育用途，未经独立审计。** 未经自审与合规审查请勿托管真实资金。见 [SECURITY.md](./SECURITY.zh-CN.md)。
 
-**[▶ 在线演示 · 交易终端](https://xiongchenyu6.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)** —— 真实托管后端。点开即用：注册（秒过）→ 点「💰 Demo funds」→ 对着真实盘口下单。
+**[▶ 在线演示 · 交易终端](https://xiongchenyu6.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)** —— 真实托管后端。点开即用：注册（秒过）→ 点「💰 Demo funds」→ 对着真实盘口下单。**⚙ Account** 面板覆盖全部功能：API 密钥、推荐返佣、提现白名单、链上充值、质押、现货保证金、永续合约。
 
-**[▶ 在线演示 · 管理后台](https://xiongchenyu6.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)** —— 只读管理控制台：对账不变量、审批队列、账户、审计日志，基于同一份真实数据。
+**[▶ 在线演示 · 管理后台](https://xiongchenyu6.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)** —— 只读管理控制台：对账不变量、审批队列、账户、费率/风控、推荐返佣结算、衍生品与质押、审计日志，基于同一份真实数据。
 
 **[★ 为什么选 pg-outcry —— 与顶级交易所对比 · 中小所优势（配图）](./docs/WHY.zh-CN.md)**
 
