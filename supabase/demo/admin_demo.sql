@@ -25,6 +25,15 @@ as $$
       from wallet_request w
       left join app_entity ae on ae.id = w.app_entity_id
       where w.status = 'PENDING'), '[]'::jsonb),
+    'withdrawal_queue', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'pub_id', w.pub_id, 'currency', w.currency, 'amount', w.amount,
+        'to_address', w.to_address, 'signing_claimed_at', w.signing_claimed_at,
+        'broadcast_txid', w.broadcast_txid, 'confirmed_at', w.confirmed_at)
+        order by w.resolved_at desc nulls last, w.created_at desc)
+      from wallet_request w
+      where w.direction = 'WITHDRAWAL' and w.status = 'APPROVED' and w.to_address is not null
+      limit 40), '[]'::jsonb),
     'accounts', coalesce((
       select jsonb_agg(jsonb_build_object(
         'external_id', external_id, 'type', type, 'status', status) order by created_at desc)
@@ -39,6 +48,22 @@ as $$
         'instrument', i.name, 'max_order_amount', r.max_order_amount,
         'max_order_notional', r.max_order_notional, 'price_band_pct', r.price_band_pct))
       from instrument_risk r left join instrument i on i.id = r.instrument_id), '[]'::jsonb),
+    'chains', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'name', name, 'kind', kind, 'confirmations', confirmations, 'enabled', enabled)
+        order by name)
+      from chain), '[]'::jsonb),
+    'chain_deposits', coalesce((
+      select jsonb_agg(t order by t.created_at desc) from (
+        select chain, txid, currency, amount, confirmations, credited_at, created_at
+        from chain_deposit order by created_at desc limit 20) t), '[]'::jsonb),
+    'api_keys', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'key_id', k.key_id, 'label', k.label, 'external_id', ae.external_id,
+        'last_used_at', k.last_used_at, 'revoked_at', k.revoked_at)
+        order by k.created_at desc)
+      from api_key k left join app_entity ae on ae.id = k.app_entity_id
+      limit 80), '[]'::jsonb),
     'audit', coalesce((
       select jsonb_agg(t order by t.created_at desc) from (
         select action, target, detail, created_at

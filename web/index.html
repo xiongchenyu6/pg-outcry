@@ -19,6 +19,13 @@
     <div class="boot__body">
       <div class="wordmark">OUTCRY<small>pure-postgres exchange terminal</small></div>
       <p class="tag">Authenticate to open a trading session. PostgREST · Realtime · Auth — no app server in the path.</p>
+      <div class="boot-products" aria-label="Available products">
+        <span>Spot</span>
+        <span>Margin</span>
+        <span>Perps</span>
+        <span>Staking</span>
+        <span>Wallet</span>
+      </div>
       <div class="oauth">
         <button class="btn" data-oauth="github">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5Z"/></svg>
@@ -136,6 +143,40 @@
             <input id="wAmt" class="mono-num" type="number" step="1" value="100" />
           </div>
           <button id="wGo">Submit request →</button>
+        </div>
+        <div class="feature-rail">
+          <div class="feature-rail__h">
+            <span class="label">Advanced products</span>
+            <span class="label amber">pure SQL</span>
+          </div>
+          <button class="feature-card" data-open-account="perp">
+            <span>
+              <b>Perpetual Futures</b>
+              <small>BTC-PERP · mark price · funding · liquidation</small>
+            </span>
+            <em>Open</em>
+          </button>
+          <button class="feature-card" data-open-account="margin">
+            <span>
+              <b>Spot Margin</b>
+              <small>Borrow/repay · health · cross-margin risk</small>
+            </span>
+            <em>Manage</em>
+          </button>
+          <button class="feature-card" data-open-account="stake">
+            <span>
+              <b>Staking</b>
+              <small>APR pools · rewards · unbonding queue</small>
+            </span>
+            <em>Stake</em>
+          </button>
+          <button class="feature-card" data-open-account="dep">
+            <span>
+              <b>On-chain Deposits</b>
+              <small>Watched addresses · confirmed credits</small>
+            </span>
+            <em>Watch</em>
+          </button>
         </div>
       </div>
     </section>

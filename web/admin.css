@@ -44,8 +44,9 @@ body.admin #app.live { display: grid; }
 
 .adm-form { padding: 10px 12px; border-top: 1px solid var(--line); display: grid; gap: 7px; }
 .adm-form .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
-.adm-form input { background: #05080a; border: 1px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 7px; }
-.adm-form input:focus { outline: none; border-color: var(--amber); }
+.adm-form input, .adm-form select { background: #05080a; border: 1px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 7px; min-width: 0; }
+.adm-form input:focus, .adm-form select:focus { outline: none; border-color: var(--amber); }
+.txid-mini { width: 100px; background: #05080a; border: 1px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 11px; padding: 3px 6px; }
 
 .recon-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; border-bottom: 1px solid rgba(120,150,138,.07); }
 .recon-row .nm { font-size: 12px; }

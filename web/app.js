@@ -612,13 +612,20 @@ async function refreshBlotter() {
 // ============================================================ ACCOUNT (API keys · referral · withdraw)
 const escH = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let acctTab = "keys", lastKeySecret = null;
-el("acctBtn").onclick = () => { el("acctModal").hidden = false; renderAcct(); };
+function openAccount(tab = acctTab) {
+  acctTab = tab;
+  el("acctModal").hidden = false;
+  document.querySelectorAll("#acctTabs button").forEach((x) => x.classList.toggle("on", x.dataset.atab === acctTab));
+  renderAcct();
+}
+el("acctBtn").onclick = () => openAccount();
 el("acctClose").onclick = () => { el("acctModal").hidden = true; };
 el("acctModal").addEventListener("click", (e) => { if (e.target === el("acctModal")) el("acctModal").hidden = true; });
 document.querySelectorAll("#acctTabs button").forEach((b) => b.onclick = () => {
-  acctTab = b.dataset.atab;
-  document.querySelectorAll("#acctTabs button").forEach((x) => x.classList.toggle("on", x === b));
-  renderAcct();
+  openAccount(b.dataset.atab);
+});
+document.querySelectorAll("[data-open-account]").forEach((b) => {
+  b.onclick = () => openAccount(b.dataset.openAccount);
 });
 
 async function renderAcct() {

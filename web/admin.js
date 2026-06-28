@@ -5,6 +5,7 @@ let sb = null;
 
 function toast(m, k = "") { const t = document.createElement("div"); t.className = "toast " + k; t.textContent = m; el("toasts").appendChild(t); setTimeout(() => t.remove(), 4200); }
 const fmt = (n, d = 2) => (n == null || isNaN(n)) ? "—" : Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+const escH = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const rpc = async (fn, args) => { const { data, error } = await sb.rpc(fn, args); if (error) { toast(`${fn}: ${error.message}`, "err"); throw error; } return data; };
 
 const _q = new URLSearchParams(location.search);
@@ -31,7 +32,10 @@ el("lock").onclick = () => { sessionStorage.removeItem("oc_admin_svc"); location
 el("refresh").onclick = refreshAll;
 
 async function refreshAll() {
-  await Promise.all([loadRecon(), loadApprovals(), loadAccounts(), loadFees(), loadRisk(), loadReferrals(), loadDeriv(), loadAudit()]);
+  await Promise.all([
+    loadRecon(), loadApprovals(), loadWithdrawQueue(), loadAccounts(), loadFees(), loadRisk(),
+    loadReferrals(), loadChainOps(), loadApiKeys(), loadDeriv(), loadAudit(),
+  ]);
   loadStats();
 }
 
@@ -73,6 +77,44 @@ async function loadApprovals() {
     : `<div class="empty">No pending wallet requests</div>`;
   el("approvals").querySelectorAll("[data-appr]").forEach((b) => b.onclick = async () => { await rpc("approve_wallet_request", { request_pub_param: b.dataset.appr }); toast("Approved"); refreshAll(); });
   el("approvals").querySelectorAll("[data-rej]").forEach((b) => b.onclick = async () => { await rpc("reject_wallet_request", { request_pub_param: b.dataset.rej }); toast("Rejected", "warn"); refreshAll(); });
+}
+
+// ---- withdrawal signer queue ----
+async function loadWithdrawQueue() {
+  const { data } = await sb.from("wallet_request")
+    .select("pub_id,direction,currency,amount,to_address,status,created_at,resolved_at,signing_claimed_at,broadcast_txid,broadcast_at,confirmed_at,app_entity(external_id)")
+    .eq("direction", "WITHDRAWAL")
+    .eq("status", "APPROVED")
+    .not("to_address", "is", null)
+    .order("resolved_at", { ascending: false })
+    .limit(50);
+  const rows = data || [];
+  const open = rows.filter((r) => !r.confirmed_at).length;
+  el("wdqCount").textContent = open ? `${open} open` : "clear";
+  const stage = (r) => r.confirmed_at ? "confirmed" : r.broadcast_txid ? "broadcast" : r.signing_claimed_at ? "claimed" : "queued";
+  el("withdrawQueue").innerHTML = `<div class="adm-form"><button class="btn-sm" id="claimWithdrawal">Claim next to sign</button></div>` +
+    (rows.length ? `<table><thead><tr><th>Request</th><th>Entity</th><th>Cur</th><th>Amt</th><th>To</th><th>Stage</th><th>Action</th></tr></thead><tbody>${
+      rows.map((r) => `<tr><td class="mono-num" title="${escH(r.pub_id)}">${escH(r.pub_id.slice(0, 10))}</td><td>${escH((r.app_entity?.external_id || "—").slice(0, 14))}</td>
+        <td>${escH(r.currency)}</td><td class="mono-num">${fmt(r.amount, 4)}</td><td class="mono-num" title="${escH(r.to_address)}">${escH((r.to_address || "").slice(0, 14))}</td>
+        <td><span class="pill ${stage(r).toUpperCase()}">${stage(r)}</span></td><td>${r.confirmed_at ? "" : r.broadcast_txid
+          ? `<div class="act"><button class="ok" data-confirm-wd="${escH(r.pub_id)}">confirm</button></div>`
+          : `<div class="act"><input class="txid-mini" data-txid-for="${escH(r.pub_id)}" placeholder="txid"/><button class="ok" data-broadcast-wd="${escH(r.pub_id)}">broadcast</button></div>`}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="empty">No on-chain withdrawals waiting for signer status.</div>`);
+  el("claimWithdrawal").onclick = async () => {
+    const r = await rpc("next_withdrawal_to_sign", {});
+    toast(r ? `Claimed ${r.pub_id?.slice(0, 10)} ${r.amount} ${r.currency}` : "No withdrawal to sign", r ? "warn" : "");
+    refreshAll();
+  };
+  el("withdrawQueue").querySelectorAll("[data-broadcast-wd]").forEach((b) => b.onclick = async () => {
+    const txid = b.parentElement.querySelector("[data-txid-for]")?.value.trim();
+    if (!txid) return toast("txid required", "err");
+    await rpc("mark_withdrawal_broadcast", { request_pub: b.dataset.broadcastWd, txid });
+    toast("Withdrawal marked broadcast"); refreshAll();
+  });
+  el("withdrawQueue").querySelectorAll("[data-confirm-wd]").forEach((b) => b.onclick = async () => {
+    await rpc("mark_withdrawal_confirmed", { request_pub: b.dataset.confirmWd });
+    toast("Withdrawal confirmed"); refreshAll();
+  });
 }
 
 // ---- accounts ----
@@ -145,15 +187,108 @@ async function loadReferrals() {
   });
 }
 
+// ---- chain deposits (operator config + manual credit) ----
+async function loadChainOps() {
+  const [{ data: chains }, { data: assets }, { data: deps }] = await Promise.all([
+    sb.from("chain").select("name,kind,rpc_url,confirmations,enabled").order("name"),
+    sb.from("chain_asset").select("chain,token,currency,decimals").order("chain"),
+    sb.from("chain_deposit").select("chain,txid,address,currency,amount,confirmations,credited_at,created_at").order("created_at", { ascending: false }).limit(20),
+  ]);
+  el("chainCount").textContent = `${chains?.length || 0} chains`;
+  el("chainOps").innerHTML =
+    ((chains && chains.length) ? `<table><thead><tr><th>Chain</th><th>Kind</th><th>Enabled</th><th>Conf</th><th>RPC</th></tr></thead><tbody>${
+      chains.map((c) => `<tr><td>${escH(c.name)}</td><td>${escH(c.kind)}</td><td class="${c.enabled ? "up" : "amber"}">${c.enabled ? "on" : "off"}</td><td class="mono-num">${c.confirmations}</td><td title="${escH(c.rpc_url || "")}">${c.rpc_url ? "set" : "—"}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No chain config</div>`) +
+    `<div class="adm-form">
+      <div class="row3"><input id="chainName" placeholder="ethereum-sepolia" /><input id="chainRpc" placeholder="rpc url (blank keep)" /><input id="chainConf" type="number" step="1" placeholder="confirmations" /></div>
+      <div class="row3"><select id="chainEnabled"><option value="">keep enabled</option><option value="true">enabled</option><option value="false">disabled</option></select><button class="btn-sm" id="setChainConfig" style="grid-column:span 2">Set chain config</button></div>
+    </div>` +
+    ((assets && assets.length) ? `<table><thead><tr><th>Chain</th><th>Token</th><th>Currency</th><th>Decimals</th></tr></thead><tbody>${
+      assets.map((a) => `<tr><td>${escH(a.chain)}</td><td class="mono-num" title="${escH(a.token)}">${escH((a.token || "").slice(0, 18))}</td><td>${escH(a.currency)}</td><td class="mono-num">${a.decimals}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No chain assets mapped</div>`) +
+    `<div class="adm-form">
+      <div class="row3"><input id="assetChain" placeholder="chain" /><input id="assetToken" placeholder="native or token" /><input id="assetCur" placeholder="EUR" /></div>
+      <div class="row3"><input id="assetDecimals" type="number" step="1" placeholder="decimals" /><button class="btn-sm" id="setChainAsset" style="grid-column:span 2">Set asset mapping</button></div>
+    </div>` +
+    `<div class="adm-form">
+      <div class="row3"><input id="depChain" placeholder="chain" /><input id="depTx" placeholder="txid" /><input id="depIdx" type="number" step="1" value="0" placeholder="log idx" /></div>
+      <div class="row3"><input id="depAddr" placeholder="watched address" /><input id="depCur" placeholder="currency" /><input id="depAmt" type="number" step="0.000001" placeholder="amount" /></div>
+      <div class="row3"><input id="depConf" type="number" step="1" placeholder="confirmations" /><button class="btn-sm" id="manualCredit" style="grid-column:span 2">Manual credit deposit</button></div>
+    </div>` +
+    ((deps && deps.length) ? `<table><thead><tr><th>When</th><th>Chain</th><th>Tx</th><th>Cur</th><th>Amount</th><th>Status</th></tr></thead><tbody>${
+      deps.map((d) => `<tr><td>${new Date(d.created_at).toLocaleString()}</td><td>${escH(d.chain)}</td><td class="mono-num" title="${escH(d.txid)}">${escH((d.txid || "").slice(0, 12))}</td><td>${escH(d.currency)}</td><td class="mono-num">${fmt(d.amount, 6)}</td><td>${d.credited_at ? '<span class="up">credited</span>' : '<span class="amber">pending</span>'}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No detected chain deposits</div>`);
+
+  el("setChainConfig").onclick = async () => {
+    const name = el("chainName").value.trim();
+    if (!name) return toast("chain required", "err");
+    const conf = parseInt(el("chainConf").value, 10);
+    const enabled = el("chainEnabled").value;
+    await rpc("admin_set_chain_config", {
+      chain_param: name,
+      rpc_url_param: el("chainRpc").value.trim() || null,
+      confirmations_param: Number.isFinite(conf) ? conf : null,
+      enabled_param: enabled === "" ? null : enabled === "true",
+    });
+    toast("Chain config updated"); refreshAll();
+  };
+  el("setChainAsset").onclick = async () => {
+    const dec = parseInt(el("assetDecimals").value, 10);
+    await rpc("admin_set_chain_asset", {
+      chain_param: el("assetChain").value.trim(),
+      token_param: el("assetToken").value.trim(),
+      currency_param: el("assetCur").value.trim(),
+      decimals_param: Number.isFinite(dec) ? dec : null,
+    });
+    toast("Asset mapping updated"); refreshAll();
+  };
+  el("manualCredit").onclick = async () => {
+    const idx = parseInt(el("depIdx").value, 10), conf = parseInt(el("depConf").value, 10);
+    const amt = parseFloat(el("depAmt").value);
+    await rpc("credit_chain_deposit", {
+      chain_param: el("depChain").value.trim(),
+      txid_param: el("depTx").value.trim(),
+      log_index_param: Number.isFinite(idx) ? idx : 0,
+      address_param: el("depAddr").value.trim(),
+      currency_param: el("depCur").value.trim(),
+      amount_param: amt,
+      confirmations_param: Number.isFinite(conf) ? conf : 0,
+    });
+    toast("Deposit credit submitted"); refreshAll();
+  };
+}
+
+// ---- API key oversight ----
+async function loadApiKeys() {
+  const { data } = await sb.from("api_key")
+    .select("key_id,label,scopes,last_used_at,revoked_at,created_at,app_entity(external_id)")
+    .order("created_at", { ascending: false })
+    .limit(80);
+  const rows = data || [];
+  const active = rows.filter((k) => !k.revoked_at).length;
+  el("keyCount").textContent = `${active} active`;
+  el("apiKeys").innerHTML = rows.length ? `<table><thead><tr><th>Key</th><th>Entity</th><th>Label</th><th>Scopes</th><th>Last used</th><th></th></tr></thead><tbody>${
+    rows.map((k) => `<tr><td class="mono-num">${escH(k.key_id)}</td><td>${escH((k.app_entity?.external_id || "—").slice(0, 14))}</td><td>${escH(k.label || "—")}</td><td>${escH((k.scopes || []).join(","))}</td>
+      <td>${k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</td><td>${k.revoked_at ? '<span class="down">revoked</span>' : `<div class="act"><button class="no" data-revoke-key="${escH(k.key_id)}">revoke</button></div>`}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="empty">No API keys</div>`;
+  el("apiKeys").querySelectorAll("[data-revoke-key]").forEach((b) => b.onclick = async () => {
+    await rpc("admin_revoke_api_key", { key_id_param: b.dataset.revokeKey });
+    toast("API key revoked", "warn"); refreshAll();
+  });
+}
+
 // ---- derivatives & staking (operator) ----
 async function loadDeriv() {
-  const [{ data: pools }, { data: mkts }, { data: perps }, { data: loans }] = await Promise.all([
-    sb.from("stake_pools").select("currency,apr,total_staked").order("currency"),
-    sb.from("perp_markets").select("symbol,mark_price,funding_rate,max_leverage").order("symbol"),
+  const [{ data: pools }, { data: stakeCfg }, { data: terms }, { data: mkts }, { data: perps }, { data: loans }] = await Promise.all([
+    sb.from("stake_pool").select("currency,apr,total_staked").order("currency"),
+    sb.from("stake_config").select("unbond_seconds").maybeSingle(),
+    sb.from("margin_config").select("max_leverage,maintenance_ratio,borrow_apr").maybeSingle(),
+    sb.from("perp_markets").select("symbol,index_symbol,margin_currency,mark_price,funding_rate,max_leverage,maintenance_ratio").order("symbol"),
     sb.from("perp_position").select("symbol,size,margin"),
     sb.from("margin_loan").select("currency,principal,accrued"),
   ]);
   el("derivWhen").textContent = new Date().toLocaleTimeString();
+  const numOrNull = (id) => {
+    const v = parseFloat(el(id).value);
+    return Number.isFinite(v) ? v : null;
+  };
   const perpBySym = new Map();
   for (const p of (perps || [])) { const e = perpBySym.get(p.symbol) || { n: 0, marg: 0 }; e.n++; e.marg += Number(p.margin); perpBySym.set(p.symbol, e); }
   const loanByCur = new Map();
@@ -161,11 +296,67 @@ async function loadDeriv() {
   const sec = (title, inner) => `<div class="recon-row" style="font-weight:600;color:var(--ink-dim)">${title}</div>${inner}`;
   el("deriv").innerHTML =
     sec("Staking pools", (pools && pools.length) ? `<table><thead><tr><th>Cur</th><th>APR</th><th>Total staked</th></tr></thead><tbody>${
-        pools.map((p) => `<tr><td>${p.currency}</td><td class="up">${fmt(p.apr * 100, 2)}%</td><td class="mono-num">${fmt(p.total_staked, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
+        pools.map((p) => `<tr><td>${escH(p.currency)}</td><td class="up">${fmt(p.apr * 100, 2)}%</td><td class="mono-num">${fmt(p.total_staked, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
+    `<div class="adm-form">
+      <div class="row3"><input id="stAdmCur" placeholder="EUR" /><input id="stAdmApr" type="number" step="0.01" placeholder="APR %" /><input id="stAdmUnbond" type="number" step="1" value="${stakeCfg?.unbond_seconds ?? 604800}" placeholder="unbond sec" /></div>
+      <button class="btn-sm" id="setStakePool">Set stake pool</button>
+    </div>` +
+    sec("Margin terms", terms ? `<table><thead><tr><th>Max leverage</th><th>Maintenance</th><th>Borrow APR</th></tr></thead><tbody><tr>
+        <td class="mono-num">${fmt(terms.max_leverage, 0)}×</td><td class="mono-num">${fmt(terms.maintenance_ratio * 100, 2)}%</td><td class="mono-num">${fmt(terms.borrow_apr * 100, 2)}%</td></tr></tbody></table>` : `<div class="empty">none</div>`) +
+    `<div class="adm-form">
+      <div class="row3"><input id="mgAdmLev" type="number" step="0.1" value="${terms?.max_leverage ?? 3}" placeholder="max lev" /><input id="mgAdmMaint" type="number" step="0.01" value="${terms ? terms.maintenance_ratio * 100 : 10}" placeholder="maint %" /><input id="mgAdmApr" type="number" step="0.01" value="${terms ? terms.borrow_apr * 100 : 10}" placeholder="borrow APR %" /></div>
+      <button class="btn-sm" id="setMarginTerms">Set margin terms</button>
+    </div>` +
     sec("Perp markets", (mkts && mkts.length) ? `<table><thead><tr><th>Symbol</th><th>Mark</th><th>Funding</th><th>Open</th><th>Margin</th></tr></thead><tbody>${
-        mkts.map((m) => { const e = perpBySym.get(m.symbol) || { n: 0, marg: 0 }; return `<tr><td>${m.symbol}</td><td class="mono-num">${fmt(m.mark_price, 2)}</td><td class="mono-num">${fmt(m.funding_rate * 100, 4)}%</td><td class="mono-num">${e.n}</td><td class="mono-num">${fmt(e.marg, 2)}</td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
+        mkts.map((m) => { const e = perpBySym.get(m.symbol) || { n: 0, marg: 0 }; return `<tr><td>${escH(m.symbol)}</td><td class="mono-num">${fmt(m.mark_price, 2)}</td><td class="mono-num">${fmt(m.funding_rate * 100, 4)}%</td><td class="mono-num">${e.n}</td><td class="mono-num">${fmt(e.marg, 2)}</td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
+    `<div class="adm-form">
+      <div class="row3"><input id="ppAdmSym" placeholder="BTC-PERP" /><input id="ppAdmIndex" placeholder="BTC_EUR" /><input id="ppAdmCur" placeholder="EUR" /></div>
+      <div class="row3"><input id="ppAdmMark" type="number" step="0.01" placeholder="mark" /><input id="ppAdmFunding" type="number" step="0.0001" placeholder="funding %" /><input id="ppAdmLev" type="number" step="0.1" placeholder="max lev" /></div>
+      <div class="row3"><input id="ppAdmMaint" type="number" step="0.01" placeholder="maint %" /><button class="btn-sm" id="setPerpMarket" style="grid-column:span 2">Set perp market</button></div>
+    </div>` +
     sec("Margin loans outstanding", loanByCur.size ? `<table><thead><tr><th>Cur</th><th>Debt (principal+accrued)</th></tr></thead><tbody>${
-        [...loanByCur.entries()].map(([c, d]) => `<tr><td>${c}</td><td class="mono-num down">${fmt(d, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">no open loans</div>`);
+        [...loanByCur.entries()].map(([c, d]) => `<tr><td>${escH(c)}</td><td class="mono-num down">${fmt(d, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">no open loans</div>`) +
+    `<div class="adm-form">
+      <div class="act">
+        <button class="ok" id="runDerivJobs">run marks/liquidations/unbond</button>
+        <button class="ok" id="runFundingNow">apply funding now</button>
+      </div>
+    </div>`;
+
+  el("setStakePool").onclick = async () => {
+    const cur = el("stAdmCur").value.trim(), apr = numOrNull("stAdmApr"), ub = numOrNull("stAdmUnbond");
+    if (!cur || apr == null) return toast("stake currency + APR required", "err");
+    await rpc("admin_set_stake_pool", { currency_param: cur, apr_param: apr / 100, unbond_seconds_param: ub == null ? null : Math.trunc(ub) });
+    toast("Stake pool updated"); refreshAll();
+  };
+  el("setMarginTerms").onclick = async () => {
+    const lev = numOrNull("mgAdmLev"), maint = numOrNull("mgAdmMaint"), apr = numOrNull("mgAdmApr");
+    if (lev == null || maint == null || apr == null) return toast("margin terms required", "err");
+    await rpc("admin_set_margin_terms", { max_leverage_param: lev, maintenance_ratio_param: maint / 100, borrow_apr_param: apr / 100 });
+    toast("Margin terms updated"); refreshAll();
+  };
+  el("setPerpMarket").onclick = async () => {
+    const sym = el("ppAdmSym").value.trim();
+    if (!sym) return toast("perp symbol required", "err");
+    await rpc("admin_set_perp_market", {
+      symbol_param: sym,
+      index_symbol_param: el("ppAdmIndex").value.trim() || null,
+      margin_currency_param: el("ppAdmCur").value.trim() || null,
+      mark_price_param: numOrNull("ppAdmMark"),
+      funding_rate_param: numOrNull("ppAdmFunding") == null ? null : numOrNull("ppAdmFunding") / 100,
+      max_leverage_param: numOrNull("ppAdmLev"),
+      maintenance_ratio_param: numOrNull("ppAdmMaint") == null ? null : numOrNull("ppAdmMaint") / 100,
+    });
+    toast("Perp market updated"); refreshAll();
+  };
+  el("runDerivJobs").onclick = async () => {
+    const r = await rpc("admin_run_derivative_jobs", { update_marks: true, apply_funding: false, check_perps: true, check_margin: true, process_unbonds: true });
+    toast(`Jobs: ${JSON.stringify(r)}`); refreshAll();
+  };
+  el("runFundingNow").onclick = async () => {
+    const r = await rpc("admin_run_derivative_jobs", { update_marks: true, apply_funding: true, check_perps: true, check_margin: true, process_unbonds: true });
+    toast(`Funding: ${JSON.stringify(r)}`, "warn"); refreshAll();
+  };
 }
 
 // ---- audit ----
@@ -216,6 +407,11 @@ async function refreshDemo() {
   el("approvals").innerHTML = appr.length ? `<table><thead><tr><th>When</th><th>Entity</th><th>Dir</th><th>Cur</th><th>Amount</th></tr></thead><tbody>${
     appr.map((r) => `<tr><td>${new Date(r.created_at).toLocaleTimeString()}</td><td>${(r.external_id || "—").slice(0, 14)}</td><td class="${r.direction === "DEPOSIT" ? "up" : "down"}">${r.direction}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.amount)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No pending wallet requests</div>`;
 
+  const wdq = d.withdrawal_queue || [];
+  el("wdqCount").textContent = `${wdq.filter((w) => !w.confirmed_at).length} open`;
+  el("withdrawQueue").innerHTML = wdq.length ? `<table><thead><tr><th>Request</th><th>Cur</th><th>Amt</th><th>To</th><th>Stage</th></tr></thead><tbody>${
+    wdq.map((w) => `<tr><td class="mono-num">${escH((w.pub_id || "").slice(0, 10))}</td><td>${escH(w.currency)}</td><td class="mono-num">${fmt(w.amount, 4)}</td><td class="mono-num">${escH((w.to_address || "").slice(0, 14))}</td><td>${w.confirmed_at ? "confirmed" : w.broadcast_txid ? "broadcast" : w.signing_claimed_at ? "claimed" : "queued"}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No signer queue items</div>`;
+
   el("acctCount").textContent = `${accts.length}`;
   el("accounts").innerHTML = `<table><thead><tr><th>External ID</th><th>Type</th><th>Status</th></tr></thead><tbody>${
     accts.map((r) => `<tr><td>${(r.external_id || "—").slice(0, 22)}</td><td>${r.type}</td><td><span class="pill ${r.status}">${r.status}</span></td></tr>`).join("")}</tbody></table>`;
@@ -236,6 +432,19 @@ async function refreshDemo() {
   el("refCount").textContent = refs.length ? `${refs.length} owed` : "all settled";
   el("referrals").innerHTML = refs.length ? `<table><thead><tr><th>Referrer</th><th>Cur</th><th>Unpaid</th></tr></thead><tbody>${
     refs.map((r) => `<tr><td>${(r.label || "—").slice(0, 18)}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.total, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No unpaid referral earnings</div>`;
+
+  const chains = d.chains || [], deposits = d.chain_deposits || [];
+  el("chainCount").textContent = `${chains.length} chains`;
+  el("chainOps").innerHTML =
+    (chains.length ? `<table><thead><tr><th>Chain</th><th>Kind</th><th>Enabled</th><th>Conf</th></tr></thead><tbody>${
+      chains.map((c) => `<tr><td>${escH(c.name)}</td><td>${escH(c.kind)}</td><td>${c.enabled ? "on" : "off"}</td><td class="mono-num">${c.confirmations}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No chain config</div>`) +
+    (deposits.length ? `<table><thead><tr><th>Chain</th><th>Tx</th><th>Cur</th><th>Amount</th><th>Status</th></tr></thead><tbody>${
+      deposits.map((d) => `<tr><td>${escH(d.chain)}</td><td class="mono-num">${escH((d.txid || "").slice(0, 12))}</td><td>${escH(d.currency)}</td><td class="mono-num">${fmt(d.amount, 6)}</td><td>${d.credited_at ? "credited" : "pending"}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No chain deposits</div>`);
+
+  const keys = d.api_keys || [];
+  el("keyCount").textContent = `${keys.filter((k) => !k.revoked_at).length} active`;
+  el("apiKeys").innerHTML = keys.length ? `<table><thead><tr><th>Key</th><th>Entity</th><th>Label</th><th>Last used</th><th>Status</th></tr></thead><tbody>${
+    keys.map((k) => `<tr><td class="mono-num">${escH(k.key_id)}</td><td>${escH((k.external_id || "—").slice(0, 14))}</td><td>${escH(k.label || "—")}</td><td>${k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</td><td>${k.revoked_at ? "revoked" : "active"}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No API keys</div>`;
 
   // derivatives & staking (read-only)
   const pools = d.stake_pools || [], mkts = d.perp_markets || [], loans = d.margin_loans || [];
