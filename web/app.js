@@ -609,6 +609,118 @@ async function refreshBlotter() {
   }
 }
 
+// ============================================================ ACCOUNT (API keys · referral · withdraw)
+const escH = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let acctTab = "keys", lastKeySecret = null;
+el("acctBtn").onclick = () => { el("acctModal").hidden = false; renderAcct(); };
+el("acctClose").onclick = () => { el("acctModal").hidden = true; };
+el("acctModal").addEventListener("click", (e) => { if (e.target === el("acctModal")) el("acctModal").hidden = true; });
+document.querySelectorAll("#acctTabs button").forEach((b) => b.onclick = () => {
+  acctTab = b.dataset.atab;
+  document.querySelectorAll("#acctTabs button").forEach((x) => x.classList.toggle("on", x === b));
+  renderAcct();
+});
+
+async function renderAcct() {
+  const body = el("acctBody");
+  body.innerHTML = `<div class="acct"><div class="empty">Loading…</div></div>`;
+  try {
+    if (acctTab === "keys") return await renderKeys(body);
+    if (acctTab === "ref") return await renderReferral(body);
+    if (acctTab === "wd") return await renderWithdraw(body);
+  } catch (e) { body.innerHTML = `<div class="acct"><div class="empty">${escH(e.message || e)}</div></div>`; }
+}
+
+async function renderKeys(body) {
+  const { data } = await sb.from("api_keys")
+    .select("key_id,label,scopes,last_used_at,revoked_at,created_at").order("created_at", { ascending: false });
+  const secret = lastKeySecret; lastKeySecret = null;
+  body.innerHTML = `<div class="acct">
+    <div class="acct-sec"><h4>Create API key</h4>
+      <div class="acct-row"><input id="kLabel" class="grow" placeholder="label (e.g. market-maker bot)"/><button class="btn" id="kCreate">Create</button></div>
+      ${secret ? `<div class="secret-box">key_id: ${escH(secret.key_id)}<br/>secret: ${escH(secret.secret)}<br/><b>⚠ Copy the secret now — it is never shown again.</b></div>` : ""}</div>
+    <div class="acct-sec"><h4>Your keys</h4>
+      ${(data && data.length) ? `<table><thead><tr><th>Key ID</th><th>Label</th><th>Scopes</th><th>Last used</th><th></th></tr></thead><tbody>${
+        data.map((k) => `<tr><td class="mono-num">${escH(k.key_id)}</td><td>${escH(k.label || "—")}</td><td>${escH((k.scopes || []).join(", "))}</td>
+          <td>${k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</td>
+          <td>${k.revoked_at ? '<span class="down">revoked</span>' : `<button class="x-btn" data-revoke="${escH(k.key_id)}">revoke</button>`}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No keys yet.</div>`}</div>
+    <div class="acct-sec"><h4>Use a key (bot)</h4>
+      <div class="empty">Exchange it for a JWT: <code>POST /rest/v1/rpc/api_key_login {key_id_param, secret_param}</code> → use the returned <code>access_token</code> as a Bearer token (every RPC + RLS works unchanged).</div></div>
+  </div>`;
+  el("kCreate").onclick = async () => {
+    const { data: r, error } = await sb.rpc("create_api_key", { label_param: el("kLabel").value || null, scopes_param: ["trade"] });
+    if (error) return toast(error.message, "err");
+    lastKeySecret = r; renderKeys(body);
+  };
+  body.querySelectorAll("[data-revoke]").forEach((b) => b.onclick = async () => {
+    const { error } = await sb.rpc("revoke_api_key", { key_id_param: b.dataset.revoke });
+    if (error) toast(error.message, "err"); else { toast("Key revoked"); renderAcct(); }
+  });
+}
+
+async function renderReferral(body) {
+  const code = (await sb.rpc("my_referral_code")).data;
+  const { data: sum } = await sb.from("referral_summary").select("referred_count,total_earned,unpaid_earned").maybeSingle();
+  const link = `${location.origin}${location.pathname}${location.search ? location.search + "&" : "?"}ref=${code || ""}`;
+  body.innerHTML = `<div class="acct">
+    <div class="acct-sec"><h4>Your referral code</h4>
+      <div class="acct-row"><input class="grow" id="refCode" readonly value="${escH(code || "")}"/><button class="btn" id="refCopy">Copy invite link</button></div></div>
+    <div class="acct-sec"><h4>Earnings</h4>
+      <div class="stat-chip"><b>${sum?.referred_count ?? 0}</b><span>referred</span></div>
+      <div class="stat-chip"><b>${fmt(sum?.total_earned || 0, 2)}</b><span>total earned</span></div>
+      <div class="stat-chip"><b>${fmt(sum?.unpaid_earned || 0, 2)}</b><span>unpaid</span></div></div>
+    <div class="acct-sec"><h4>Set your referrer <span style="color:var(--ink-faint)">(one-time)</span></h4>
+      <div class="acct-row"><input id="refSet" class="grow" placeholder="referrer code" value="${escH(_q.get("ref") || "")}"/><button class="btn" id="refSetBtn">Apply</button></div></div>
+  </div>`;
+  el("refCopy").onclick = () => { navigator.clipboard?.writeText(link); toast("Invite link copied"); };
+  el("refSetBtn").onclick = async () => {
+    const { error } = await sb.rpc("set_my_referrer", { code_param: el("refSet").value.trim() });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Referrer set"); renderAcct(); }
+  };
+}
+
+async function renderWithdraw(body) {
+  const [{ data: addrs }, { data: cash }] = await Promise.all([
+    sb.from("withdrawal_addresses").select("id,currency,address,label,usable").order("currency"),
+    sb.from("cash_balances").select("currency,available").order("currency"),
+  ]);
+  const usable = (addrs || []).filter((a) => a.usable);
+  body.innerHTML = `<div class="acct">
+    <div class="acct-sec"><h4>Whitelisted addresses</h4>
+      ${(addrs && addrs.length) ? `<table><thead><tr><th>Cur</th><th>Address</th><th>Label</th><th>Status</th><th></th></tr></thead><tbody>${
+        addrs.map((a) => `<tr><td>${escH(a.currency)}</td><td class="mono-num">${escH(a.address)}</td><td>${escH(a.label || "—")}</td>
+          <td>${a.usable ? '<span class="up">usable</span>' : '<span class="amber">cooling…</span>'}</td>
+          <td><button class="x-btn" data-rmaddr="${a.id}">remove</button></td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No whitelisted addresses.</div>`}
+      <div class="acct-row"><select id="waCur">${(cash || []).map((c) => `<option>${escH(c.currency)}</option>`).join("") || "<option>EUR</option>"}</select>
+        <input id="waAddr" class="grow" placeholder="destination address"/><input id="waLabel" placeholder="label"/><button class="btn" id="waAdd">Add</button></div>
+      <div class="empty">New addresses have a 24h cooling period before they can be used.</div></div>
+    <div class="acct-sec"><h4>Request withdrawal</h4>
+      <div class="acct-row">
+        <select id="wdCur">${(cash || []).map((c) => `<option value="${escH(c.currency)}">${escH(c.currency)} · avail ${fmt(c.available, 2)}</option>`).join("")}</select>
+        <input id="wdAmt" type="number" step="0.0001" placeholder="amount"/>
+        <select id="wdAddr">${usable.map((a) => `<option value="${escH(a.address)}">${escH(a.currency)} · ${escH(a.address)}</option>`).join("") || '<option value="">— add & cool an address first —</option>'}</select>
+        <button class="btn" id="wdGo">Withdraw</button></div>
+      <div class="empty">Goes to a cooled whitelisted address; subject to rolling limits + admin approval.</div></div>
+  </div>`;
+  body.querySelectorAll("[data-rmaddr]").forEach((b) => b.onclick = async () => {
+    const { error } = await sb.rpc("remove_withdrawal_address", { address_id_param: +b.dataset.rmaddr });
+    if (error) toast(error.message, "err"); else { toast("Address removed"); renderAcct(); }
+  });
+  el("waAdd").onclick = async () => {
+    const { error } = await sb.rpc("add_withdrawal_address", { currency_param: el("waCur").value, address_param: el("waAddr").value.trim(), label_param: el("waLabel").value || null });
+    if (error) toast(error.message, "err"); else { toast("Address added — usable after 24h cooling", "warn"); renderAcct(); }
+  };
+  el("wdGo").onclick = async () => {
+    const addr = el("wdAddr").value;
+    if (!addr) return toast("add & cool a whitelisted address first", "err");
+    const { error } = await sb.rpc("request_withdrawal_to", { currency_param: el("wdCur").value, amount_param: +el("wdAmt").value, to_address_param: addr });
+    if (error) toast(error.message.replace(/_/g, " "), "err");
+    else { toast("Withdrawal requested (pending approval)", "warn"); refreshBlotter(); }
+  };
+}
+
 // ============================================================ BOOT
 (async () => {
   await loadWasm();

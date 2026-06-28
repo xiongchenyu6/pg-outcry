@@ -44,6 +44,7 @@
     <span class="spacer"></span>
     <span class="conn"><span class="dot off" id="connDot"></span><span id="connTxt">connecting</span></span>
     <span class="who">⬢ <b id="whoami">—</b></span>
+    <button class="swap" id="acctBtn">⚙ Account</button>
     <button class="swap" id="logout">Logout</button>
   </header>
 
@@ -152,6 +153,21 @@
       <div class="panel__b" id="blotBody"></div>
     </section>
   </main>
+</div>
+
+<!-- ░░ ACCOUNT MODAL ░░ -->
+<div id="acctModal" class="modal" hidden>
+  <div class="modal__box">
+    <div class="modal__h">
+      <div class="subtabs" id="acctTabs">
+        <button data-atab="keys" class="on">API Keys</button>
+        <button data-atab="ref">Referral</button>
+        <button data-atab="wd">Withdraw</button>
+      </div>
+      <button class="swap" id="acctClose">✕ Close</button>
+    </div>
+    <div class="modal__b" id="acctBody"></div>
+  </div>
 </div>
 
 <div class="toast-wrap" id="toasts"></div>

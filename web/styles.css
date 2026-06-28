@@ -53,6 +53,39 @@ body::after {
   font-size: 10px; color: var(--ink-dim); }
 .up { color: var(--phos); } .down { color: var(--coral); } .amber { color: var(--amber); }
 
+/* ── account modal (API keys / referral / withdraw) ── */
+.modal { position: fixed; inset: 0; z-index: 100; background: rgba(2,5,4,.72);
+  display: grid; place-items: center; padding: 16px; }
+.modal[hidden] { display: none; }
+.modal__box { width: min(680px, 96vw); max-height: 90vh; display: flex; flex-direction: column;
+  background: var(--bg-panel); border: 1px solid var(--line); box-shadow: 0 24px 70px rgba(0,0,0,.65); }
+.modal__h { display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.modal__b { padding: 14px; overflow: auto; min-height: 0; }
+.acct-sec { margin-bottom: 18px; }
+.acct-sec h4 { font-family: var(--cond); text-transform: uppercase; letter-spacing: .16em;
+  font-size: 11px; color: var(--ink-dim); margin: 0 0 8px; font-weight: 600; }
+.acct-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.acct-row input, .acct-row select { background: var(--bg-raised); border: 1px solid var(--line);
+  color: var(--ink); padding: 7px 9px; font-family: var(--mono); font-size: 12px; min-width: 90px; }
+.acct-row input:focus, .acct-row select:focus { outline: none; border-color: var(--phos-dim); }
+.acct-row input.grow { flex: 1; min-width: 160px; }
+.acct table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.modal__b table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.modal__b th { text-align: left; color: var(--ink-faint); font-weight: 500; font-size: 10px;
+  text-transform: uppercase; letter-spacing: .1em; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.modal__b td { padding: 5px 8px; border-bottom: 1px solid rgba(120,150,138,.07); }
+.secret-box { border: 1px solid var(--amber); background: rgba(255,180,84,.06); padding: 10px;
+  margin: 8px 0; font-family: var(--mono); font-size: 12px; word-break: break-all; color: var(--amber); }
+.stat-chip { display: inline-block; border: 1px solid var(--line); padding: 6px 12px; margin: 0 8px 8px 0; }
+.stat-chip b { display: block; font-size: 18px; color: var(--phos); font-variant-numeric: tabular-nums; }
+.stat-chip span { font-size: 10px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .1em; }
+.acct .empty { color: var(--ink-faint); font-size: 12px; padding: 6px 0; }
+.x-btn { color: var(--coral); border: 1px solid rgba(255,93,108,.4); background: transparent;
+  padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: var(--mono); }
+.x-btn:hover { background: rgba(255,93,108,.12); }
+@media (max-width: 860px) { header #acctBtn { order: 6; } }
+
 /* always-visible available-balance bar in the order-entry panel */
 .balbar { border: 1px solid var(--line); background: rgba(78,247,168,.03); padding: 8px 10px; margin-bottom: 10px; }
 .balbar > .label { display: block; margin-bottom: 6px; }
