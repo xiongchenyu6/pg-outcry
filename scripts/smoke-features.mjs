@@ -104,6 +104,11 @@ const T2 = await signup("stk"); await fund(T2.pub, "EUR", 1000);
 const eur = async () => Number((await get(T2.token, "cash_balances?currency=eq.EUR&select=available"))[0]?.available || 0);
 ok((await rpc(T2.token, "stake", { currency_param: "EUR", amount_param: 100 })).status < 300, "stake 100");
 ok(await eur() === 900, "principal debited (EUR 900)");
+// my_stakes is security_invoker, joins stake_pool, and calls banker_round — reading
+// it as the user exercises the grant + RLS-policy path (regressed once, see 9960).
+ok((await get(T2.token, "stake_pools?select=currency,apr")).some((p) => p.currency === "EUR"), "stake_pools readable by user");
+const myStk = await get(T2.token, "my_stakes?select=currency,amount,pending_reward");
+ok(Array.isArray(myStk) && myStk.some((s) => s.currency === "EUR" && Number(s.amount) === 100), "my_stakes shows the position (banker_round + RLS ok)");
 execSync(`psql "${PGURL}" -tAqc "update stake_pool set updated_at = now() - interval '365 days' where currency='EUR';"`);
 const reward = (await rpc(T2.token, "claim_stake_rewards", { currency_param: "EUR" })).body;
 ok(Number(reward) >= 9.9 && Number(reward) <= 10.1, `~10 reward at 10% APR (got ${reward})`);

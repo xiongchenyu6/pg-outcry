@@ -9,21 +9,27 @@
 --    banker_round". It is an IMMUTABLE pure rounding helper that reads nothing, so
 --    granting EXECUTE is safe.
 --
--- 2) Public market tables had RLS enabled with NO policy. stake_pool and perp_market
---    hold public market data (APR / total staked / mark price / funding) and are
---    joined by the security_invoker views my_stakes and my_perp. With RLS on and no
---    SELECT policy, those joins returned zero rows for authenticated, so positions
---    never showed even though stake_position / perp_position had the row. (The
---    stake_pools / perp_markets *views* worked because they're security-definer and
---    bypass RLS.) Add public read policies. margin_config is read only via
---    security-definer views (margin_terms / my_margin_health), so it needs no policy.
+-- 2) Public market tables had RLS enabled with NO policy on hosted (switched on
+--    out-of-band by the Supabase security advisor — the migrations themselves only
+--    enabled RLS on the *position* tables, so CI never reproduced this). stake_pool
+--    and perp_market hold public market data (APR / total staked / mark price /
+--    funding) and are joined by the security_invoker views my_stakes and my_perp.
+--    With RLS on and no SELECT policy, those joins returned zero rows for
+--    authenticated, so positions never showed even though stake_position /
+--    perp_position had the row. (The stake_pools / perp_markets *views* worked
+--    because they're security-definer and bypass RLS.) Make this declarative: enable
+--    RLS here too (so CI == hosted == the migration) and add public read policies.
+--    margin_config is read only via security-definer views (margin_terms /
+--    my_margin_health), so it needs no policy.
 --
 -- Numbered >9900 so the lockdown's revoke loop has already run.
 
 grant execute on function banker_round(numeric, integer) to anon, authenticated;
 
+alter table stake_pool enable row level security;
 drop policy if exists read_stake_pool on stake_pool;
 create policy read_stake_pool on stake_pool for select to anon, authenticated using (true);
 
+alter table perp_market enable row level security;
 drop policy if exists read_perp_market on perp_market;
 create policy read_perp_market on perp_market for select to anon, authenticated using (true);
