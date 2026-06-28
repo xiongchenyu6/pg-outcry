@@ -628,6 +628,10 @@ async function renderAcct() {
     if (acctTab === "keys") return await renderKeys(body);
     if (acctTab === "ref") return await renderReferral(body);
     if (acctTab === "wd") return await renderWithdraw(body);
+    if (acctTab === "dep") return await renderDeposits(body);
+    if (acctTab === "stake") return await renderStake(body);
+    if (acctTab === "margin") return await renderMargin(body);
+    if (acctTab === "perp") return await renderPerp(body);
   } catch (e) { body.innerHTML = `<div class="acct"><div class="empty">${escH(e.message || e)}</div></div>`; }
 }
 
@@ -719,6 +723,149 @@ async function renderWithdraw(body) {
     if (error) toast(error.message.replace(/_/g, " "), "err");
     else { toast("Withdrawal requested (pending approval)", "warn"); refreshBlotter(); }
   };
+}
+
+// ---- Deposits (on-chain, in-DB watcher) ----
+const CHAINS = ["ethereum-sepolia", "tron-nile", "solana-testnet"];
+async function renderDeposits(body) {
+  const [{ data: addrs }, { data: deps }] = await Promise.all([
+    sb.from("my_deposit_addresses").select("chain,address,created_at").order("created_at", { ascending: false }),
+    sb.from("my_chain_deposits").select("chain,txid,currency,amount,confirmations,credited_at,created_at").order("created_at", { ascending: false }).limit(40),
+  ]);
+  body.innerHTML = `<div class="acct">
+    <div class="acct-sec"><h4>Register a deposit address</h4>
+      <div class="acct-row"><select id="depChain">${CHAINS.map((c) => `<option>${escH(c)}</option>`).join("")}</select>
+        <input id="depAddr" class="grow" placeholder="your address on this chain"/><button class="btn" id="depAdd">Watch</button></div>
+      <div class="empty">A pure-SQL watcher (pg_cron + pg_net) credits inbound transfers to this address after N confirmations — no app server in the path.</div></div>
+    <div class="acct-sec"><h4>Watched addresses</h4>
+      ${(addrs && addrs.length) ? `<table><thead><tr><th>Chain</th><th>Address</th><th>Since</th></tr></thead><tbody>${
+        addrs.map((a) => `<tr><td>${escH(a.chain)}</td><td class="mono-num">${escH(a.address)}</td><td>${new Date(a.created_at).toLocaleDateString()}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No watched addresses yet.</div>`}</div>
+    <div class="acct-sec"><h4>Detected deposits</h4>
+      ${(deps && deps.length) ? `<table><thead><tr><th>Chain</th><th>Tx</th><th>Cur</th><th>Amount</th><th>Conf</th><th>Status</th></tr></thead><tbody>${
+        deps.map((d) => `<tr><td>${escH(d.chain)}</td><td class="mono-num" title="${escH(d.txid)}">${escH((d.txid || "").slice(0, 12))}…</td>
+          <td>${escH(d.currency)}</td><td class="mono-num">${fmt(d.amount, 6)}</td><td class="mono-num">${d.confirmations}</td>
+          <td>${d.credited_at ? '<span class="up">credited</span>' : '<span class="amber">pending…</span>'}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No deposits detected yet.</div>`}</div>
+  </div>`;
+  el("depAdd").onclick = async () => {
+    const { error } = await sb.rpc("register_deposit_address", { chain_param: el("depChain").value, address_param: el("depAddr").value.trim() });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Address registered — watcher is live"); renderAcct(); }
+  };
+}
+
+// ---- Staking (reward-per-token, pgmq unbonding) ----
+async function renderStake(body) {
+  const [{ data: pools }, { data: mine }] = await Promise.all([
+    sb.from("stake_pools").select("currency,apr,total_staked").order("currency"),
+    sb.from("my_stakes").select("currency,amount,pending_reward,apr").order("currency"),
+  ]);
+  const curs = (pools || []).map((p) => p.currency);
+  body.innerHTML = `<div class="acct">
+    <div class="acct-sec"><h4>Pools</h4>
+      ${(pools && pools.length) ? `<table><thead><tr><th>Currency</th><th>APR</th><th>Total staked</th></tr></thead><tbody>${
+        pools.map((p) => `<tr><td>${escH(p.currency)}</td><td class="up">${fmt(p.apr * 100, 2)}%</td><td class="mono-num">${fmt(p.total_staked, 4)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No staking pools configured.</div>`}</div>
+    <div class="acct-sec"><h4>Your positions</h4>
+      ${(mine && mine.length) ? `<table><thead><tr><th>Currency</th><th>Staked</th><th>Pending reward</th><th></th></tr></thead><tbody>${
+        mine.map((s) => `<tr><td>${escH(s.currency)}</td><td class="mono-num">${fmt(s.amount, 4)}</td><td class="mono-num up">${fmt(s.pending_reward, 6)}</td>
+          <td><button class="x-btn" data-claim="${escH(s.currency)}">claim</button> <button class="x-btn" data-unstake="${escH(s.currency)}">unstake all</button></td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No active stakes.</div>`}</div>
+    <div class="acct-sec"><h4>Stake</h4>
+      <div class="acct-row"><select id="stCur">${curs.map((c) => `<option>${escH(c)}</option>`).join("") || "<option>EUR</option>"}</select>
+        <input id="stAmt" type="number" step="0.0001" placeholder="amount"/><button class="btn" id="stGo">Stake</button></div>
+      <div class="empty">Rewards accrue continuously (lazy reward-per-token); unstaking has an unbonding delay, then principal returns automatically (pgmq).</div></div>
+  </div>`;
+  el("stGo").onclick = async () => {
+    const { error } = await sb.rpc("stake", { currency_param: el("stCur").value, amount_param: +el("stAmt").value });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Staked"); renderAcct(); refreshBlotter(); }
+  };
+  body.querySelectorAll("[data-claim]").forEach((b) => b.onclick = async () => {
+    const { error } = await sb.rpc("claim_stake_rewards", { currency_param: b.dataset.claim });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Rewards claimed"); renderAcct(); refreshBlotter(); }
+  });
+  body.querySelectorAll("[data-unstake]").forEach((b) => b.onclick = async () => {
+    const cur = b.dataset.unstake;
+    const row = (mine || []).find((s) => s.currency === cur);
+    const { error } = await sb.rpc("unstake", { currency_param: cur, amount_param: row ? +row.amount : 0 });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Unstaking — principal returns after unbonding", "warn"); renderAcct(); }
+  });
+}
+
+// ---- Spot margin (cross-margin, EUR-valued; pg_cron liquidation) ----
+async function renderMargin(body) {
+  const [{ data: terms }, { data: health }, { data: loans }, { data: cash }] = await Promise.all([
+    sb.from("margin_terms").select("max_leverage,maintenance_ratio,borrow_apr").maybeSingle(),
+    sb.rpc("my_margin_health"),
+    sb.from("my_margin").select("currency,principal,accrued,debt").order("currency"),
+    sb.from("cash_balances").select("currency").order("currency"),
+  ]);
+  const h = Array.isArray(health) ? health[0] : health;
+  const curs = (cash || []).map((c) => c.currency);
+  body.innerHTML = `<div class="acct">
+    <div class="acct-sec"><h4>Account health <span style="color:var(--ink-faint)">(valued in EUR)</span></h4>
+      <div class="stat-chip"><b>${fmt(h?.collateral || 0, 2)}</b><span>collateral</span></div>
+      <div class="stat-chip"><b>${fmt(h?.debt || 0, 2)}</b><span>debt</span></div>
+      <div class="stat-chip"><b>${fmt(h?.equity || 0, 2)}</b><span>equity</span></div>
+      ${terms ? `<div class="empty">Max leverage <b>${fmt(terms.max_leverage, 0)}×</b> · maintenance <b>${fmt(terms.maintenance_ratio * 100, 1)}%</b> · borrow APR <b>${fmt(terms.borrow_apr * 100, 1)}%</b></div>` : ""}</div>
+    <div class="acct-sec"><h4>Outstanding loans</h4>
+      ${(loans && loans.length) ? `<table><thead><tr><th>Currency</th><th>Principal</th><th>Accrued</th><th>Debt</th><th></th></tr></thead><tbody>${
+        loans.map((l) => `<tr><td>${escH(l.currency)}</td><td class="mono-num">${fmt(l.principal, 4)}</td><td class="mono-num amber">${fmt(l.accrued, 6)}</td><td class="mono-num down">${fmt(l.debt, 4)}</td>
+          <td><button class="x-btn" data-repay="${escH(l.currency)}" data-debt="${l.debt}">repay all</button></td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No outstanding loans.</div>`}</div>
+    <div class="acct-sec"><h4>Borrow</h4>
+      <div class="acct-row"><select id="mgCur">${curs.map((c) => `<option>${escH(c)}</option>`).join("") || "<option>EUR</option>"}</select>
+        <input id="mgAmt" type="number" step="0.0001" placeholder="amount"/><button class="btn" id="mgGo">Borrow</button></div>
+      <div class="empty">Total debt is capped at equity·(leverage−1). A pg_cron monitor liquidates when equity ≤ debt·maintenance.</div></div>
+  </div>`;
+  el("mgGo").onclick = async () => {
+    const { error } = await sb.rpc("borrow", { currency_param: el("mgCur").value, amount_param: +el("mgAmt").value });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Borrowed"); renderAcct(); refreshBlotter(); }
+  };
+  body.querySelectorAll("[data-repay]").forEach((b) => b.onclick = async () => {
+    const { error } = await sb.rpc("repay", { currency_param: b.dataset.repay, amount_param: +b.dataset.debt });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Repaid"); renderAcct(); refreshBlotter(); }
+  });
+}
+
+// ---- Perpetual futures (position-based linear perp) ----
+async function renderPerp(body) {
+  const [{ data: mkts }, { data: mine }] = await Promise.all([
+    sb.from("perp_markets").select("symbol,index_symbol,margin_currency,mark_price,funding_rate,max_leverage,maintenance_ratio").order("symbol"),
+    sb.from("my_perp").select("symbol,size,entry_price,mark_price,upnl,margin,equity").order("symbol"),
+  ]);
+  const syms = (mkts || []).map((m) => m.symbol);
+  const open = new Set((mine || []).map((p) => p.symbol));
+  body.innerHTML = `<div class="acct">
+    <div class="acct-sec"><h4>Markets</h4>
+      ${(mkts && mkts.length) ? `<table><thead><tr><th>Symbol</th><th>Mark</th><th>Funding</th><th>Max lev</th><th>Maint</th></tr></thead><tbody>${
+        mkts.map((m) => `<tr><td>${escH(m.symbol)}</td><td class="mono-num">${fmt(m.mark_price, 2)}</td><td class="mono-num">${fmt(m.funding_rate * 100, 4)}%</td>
+          <td class="mono-num">${fmt(m.max_leverage, 0)}×</td><td class="mono-num">${fmt(m.maintenance_ratio * 100, 1)}%</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No perp markets.</div>`}</div>
+    <div class="acct-sec"><h4>Your positions</h4>
+      ${(mine && mine.length) ? `<table><thead><tr><th>Symbol</th><th>Size</th><th>Entry</th><th>Mark</th><th>uPnL</th><th>Margin</th><th>Equity</th><th></th></tr></thead><tbody>${
+        mine.map((p) => `<tr><td>${escH(p.symbol)}</td><td class="mono-num ${p.size >= 0 ? "up" : "down"}">${fmt(p.size, 4)}</td>
+          <td class="mono-num">${fmt(p.entry_price, 2)}</td><td class="mono-num">${fmt(p.mark_price, 2)}</td>
+          <td class="mono-num ${p.upnl >= 0 ? "up" : "down"}">${fmt(p.upnl, 2)}</td><td class="mono-num">${fmt(p.margin, 2)}</td><td class="mono-num">${fmt(p.equity, 2)}</td>
+          <td><button class="x-btn" data-closeperp="${escH(p.symbol)}">close</button></td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">No open positions.</div>`}</div>
+    <div class="acct-sec"><h4>Open position</h4>
+      <div class="acct-row"><select id="ppSym">${syms.filter((s) => !open.has(s)).map((s) => `<option>${escH(s)}</option>`).join("") || "<option value=''>— all positions open —</option>"}</select>
+        <select id="ppSide"><option value="1">Long</option><option value="-1">Short</option></select>
+        <input id="ppSize" type="number" step="0.0001" placeholder="size (base)"/>
+        <input id="ppMargin" type="number" step="0.01" placeholder="margin"/><button class="btn" id="ppGo">Open</button></div>
+      <div class="empty">Margin is posted in the market's quote currency; size·mark/leverage is the minimum. Longs pay shorts when funding is positive (pg_cron).</div></div>
+  </div>`;
+  el("ppGo").onclick = async () => {
+    const sym = el("ppSym").value; if (!sym) return toast("no flat market to open", "err");
+    const size = (+el("ppSide").value) * Math.abs(+el("ppSize").value);
+    const { error } = await sb.rpc("open_perp", { symbol_param: sym, size_param: size, margin_param: +el("ppMargin").value });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Position opened"); renderAcct(); refreshBlotter(); }
+  };
+  body.querySelectorAll("[data-closeperp]").forEach((b) => b.onclick = async () => {
+    const { data: r, error } = await sb.rpc("close_perp", { symbol_param: b.dataset.closeperp });
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast(`Closed · PnL ${fmt(r?.pnl, 2)} · payout ${fmt(r?.payout, 2)}`); renderAcct(); refreshBlotter(); }
+  });
 }
 
 // ============================================================ BOOT

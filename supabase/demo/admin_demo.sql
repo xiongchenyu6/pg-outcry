@@ -42,7 +42,27 @@ as $$
     'audit', coalesce((
       select jsonb_agg(t order by t.created_at desc) from (
         select action, target, detail, created_at
-        from admin_audit_log order by created_at desc limit 40) t), '[]'::jsonb)
+        from admin_audit_log order by created_at desc limit 40) t), '[]'::jsonb),
+    'stake_pools', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'currency', currency, 'apr', apr, 'total_staked', total_staked) order by currency)
+      from stake_pool), '[]'::jsonb),
+    'perp_markets', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'symbol', m.symbol, 'mark_price', m.mark_price, 'funding_rate', m.funding_rate,
+        'open', (select count(*) from perp_position p where p.symbol = m.symbol),
+        'margin', coalesce((select sum(p.margin) from perp_position p where p.symbol = m.symbol), 0))
+        order by m.symbol)
+      from perp_market m), '[]'::jsonb),
+    'margin_loans', coalesce((
+      select jsonb_agg(jsonb_build_object('currency', currency, 'debt', debt) order by currency)
+      from (select currency, sum(principal + accrued) as debt from margin_loan group by currency) g), '[]'::jsonb),
+    'referrals', coalesce((
+      select jsonb_agg(jsonb_build_object('label', label, 'currency', currency, 'total', total) order by total desc)
+      from (
+        select coalesce(ae.external_id, ae.pub_id) as label, e.currency, sum(e.amount) as total
+        from referral_earning e join app_entity ae on ae.id = e.referrer_entity
+        where e.paid_at is null group by 1, 2) r), '[]'::jsonb)
   );
 $$;
 

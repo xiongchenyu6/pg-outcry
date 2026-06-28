@@ -60,7 +60,9 @@ body::after {
 .modal__box { width: min(680px, 96vw); max-height: 90vh; display: flex; flex-direction: column;
   background: var(--bg-panel); border: 1px solid var(--line); box-shadow: 0 24px 70px rgba(0,0,0,.65); }
 .modal__h { display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+#acctTabs { flex-wrap: wrap; }
+#acctTabs button { padding: 2px 4px; }
 .modal__b { padding: 14px; overflow: auto; min-height: 0; }
 .acct-sec { margin-bottom: 18px; }
 .acct-sec h4 { font-family: var(--cond); text-transform: uppercase; letter-spacing: .16em;

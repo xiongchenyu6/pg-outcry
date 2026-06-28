@@ -31,7 +31,7 @@ el("lock").onclick = () => { sessionStorage.removeItem("oc_admin_svc"); location
 el("refresh").onclick = refreshAll;
 
 async function refreshAll() {
-  await Promise.all([loadRecon(), loadApprovals(), loadAccounts(), loadFees(), loadRisk(), loadAudit()]);
+  await Promise.all([loadRecon(), loadApprovals(), loadAccounts(), loadFees(), loadRisk(), loadReferrals(), loadDeriv(), loadAudit()]);
   loadStats();
 }
 
@@ -43,6 +43,7 @@ function loadStats() {
     ["suspended", S.suspended ?? "—", S.suspended ? "warn" : "ok"],
     ["pending wallet", S.pending ?? "—", S.pending ? "warn" : "ok"],
     ["recon fails", S.reconFails ?? "—", S.reconFails ? "bad" : "ok"],
+    ["ref. unpaid", S.refUnpaid ?? "—", S.refUnpaid ? "warn" : "ok"],
     ["audit (24h)", S.audit ?? "—", ""],
   ].map(([l, n, c]) => `<div class="stat"><div class="n ${c}">${n}</div><div class="l">${l}</div></div>`).join("");
 }
@@ -116,6 +117,57 @@ el("setRisk").onclick = async () => {
   await rpc("admin_set_instrument_risk", { instrument_name_param: i, max_amount: a || null, max_notional: nn || null, band_pct: b || null }); toast("Risk set"); loadRisk(); loadAudit();
 };
 
+// ---- referral payouts (operator) ----
+async function loadReferrals() {
+  const [{ data: earn }, { data: ents }] = await Promise.all([
+    sb.from("referral_earning").select("referrer_entity,currency,amount").is("paid_at", null),
+    sb.from("app_entity").select("id,pub_id,external_id"),
+  ]);
+  const byId = new Map((ents || []).map((e) => [e.id, e]));
+  const agg = new Map();   // key: referrer_entity|currency
+  for (const r of (earn || [])) {
+    const k = r.referrer_entity + "|" + r.currency;
+    agg.set(k, (agg.get(k) || 0) + Number(r.amount));
+  }
+  const rows = [...agg.entries()].map(([k, total]) => {
+    const [id, currency] = k.split("|"); const e = byId.get(+id) || {};
+    return { pub: e.pub_id, label: e.external_id || e.pub_id, currency, total };
+  }).sort((a, b) => b.total - a.total);
+  S.refUnpaid = rows.length;
+  el("refCount").textContent = rows.length ? `${rows.length} owed` : "all settled";
+  el("referrals").innerHTML = rows.length ? `<table><thead><tr><th>Referrer</th><th>Cur</th><th>Unpaid</th><th>Action</th></tr></thead><tbody>${
+    rows.map((r) => `<tr><td title="${r.pub}">${(r.label || "—").slice(0, 18)}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.total, 4)}</td>
+      <td><div class="act"><button class="ok" data-pay="${r.pub}" data-cur="${r.currency}">pay</button></div></td></tr>`).join("")}</tbody></table>`
+    : `<div class="empty">No unpaid referral earnings</div>`;
+  el("referrals").querySelectorAll("[data-pay]").forEach((b) => b.onclick = async () => {
+    await rpc("pay_referral_earnings", { entity_pub: b.dataset.pay, currency_param: b.dataset.cur });
+    toast("Referral earnings paid"); refreshAll();
+  });
+}
+
+// ---- derivatives & staking (operator) ----
+async function loadDeriv() {
+  const [{ data: pools }, { data: mkts }, { data: perps }, { data: loans }] = await Promise.all([
+    sb.from("stake_pools").select("currency,apr,total_staked").order("currency"),
+    sb.from("perp_markets").select("symbol,mark_price,funding_rate,max_leverage").order("symbol"),
+    sb.from("perp_position").select("symbol,size,margin"),
+    sb.from("margin_loan").select("currency,principal,accrued"),
+  ]);
+  el("derivWhen").textContent = new Date().toLocaleTimeString();
+  const perpBySym = new Map();
+  for (const p of (perps || [])) { const e = perpBySym.get(p.symbol) || { n: 0, marg: 0 }; e.n++; e.marg += Number(p.margin); perpBySym.set(p.symbol, e); }
+  const loanByCur = new Map();
+  for (const l of (loans || [])) loanByCur.set(l.currency, (loanByCur.get(l.currency) || 0) + Number(l.principal) + Number(l.accrued));
+  const sec = (title, inner) => `<div class="recon-row" style="font-weight:600;color:var(--ink-dim)">${title}</div>${inner}`;
+  el("deriv").innerHTML =
+    sec("Staking pools", (pools && pools.length) ? `<table><thead><tr><th>Cur</th><th>APR</th><th>Total staked</th></tr></thead><tbody>${
+        pools.map((p) => `<tr><td>${p.currency}</td><td class="up">${fmt(p.apr * 100, 2)}%</td><td class="mono-num">${fmt(p.total_staked, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
+    sec("Perp markets", (mkts && mkts.length) ? `<table><thead><tr><th>Symbol</th><th>Mark</th><th>Funding</th><th>Open</th><th>Margin</th></tr></thead><tbody>${
+        mkts.map((m) => { const e = perpBySym.get(m.symbol) || { n: 0, marg: 0 }; return `<tr><td>${m.symbol}</td><td class="mono-num">${fmt(m.mark_price, 2)}</td><td class="mono-num">${fmt(m.funding_rate * 100, 4)}%</td><td class="mono-num">${e.n}</td><td class="mono-num">${fmt(e.marg, 2)}</td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
+    sec("Margin loans outstanding", loanByCur.size ? `<table><thead><tr><th>Cur</th><th>Debt (principal+accrued)</th></tr></thead><tbody>${
+        [...loanByCur.entries()].map(([c, d]) => `<tr><td>${c}</td><td class="mono-num down">${fmt(d, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">no open loans</div>`);
+}
+
 // ---- audit ----
 async function loadAudit() {
   const { data } = await sb.from("admin_audit_log").select("action,target,detail,created_at").order("created_at", { ascending: false }).limit(40);
@@ -139,6 +191,8 @@ async function bootDemo() {
   banner.textContent = "READ-ONLY DEMO · live data from the hosted pg-outcry back-office · actions disabled";
   document.body.insertBefore(banner, document.body.firstChild);
   ["setFee", "setRisk"].forEach((id) => { const b = el(id); if (b) { b.disabled = true; b.title = "read-only demo"; } });
+  // forms have no meaning in read-only demo
+  document.querySelectorAll(".adm-form").forEach((f) => f.style.display = "none");
   el("refresh").onclick = refreshDemo;
   refreshDemo();
 }
@@ -175,6 +229,25 @@ async function refreshDemo() {
   el("auditCount").textContent = `${audit.length}`;
   el("audit").innerHTML = audit.length ? `<table><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>${
     audit.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td class="amber">${r.action}</td><td>${(r.target || "").slice(0, 18)}</td><td style="color:var(--ink-dim)">${r.detail ? JSON.stringify(r.detail).slice(0, 60) : ""}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No admin actions yet</div>`;
+
+  // referral payouts (read-only)
+  const refs = d.referrals || [];
+  S.refUnpaid = refs.length; loadStats();
+  el("refCount").textContent = refs.length ? `${refs.length} owed` : "all settled";
+  el("referrals").innerHTML = refs.length ? `<table><thead><tr><th>Referrer</th><th>Cur</th><th>Unpaid</th></tr></thead><tbody>${
+    refs.map((r) => `<tr><td>${(r.label || "—").slice(0, 18)}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.total, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No unpaid referral earnings</div>`;
+
+  // derivatives & staking (read-only)
+  const pools = d.stake_pools || [], mkts = d.perp_markets || [], loans = d.margin_loans || [];
+  el("derivWhen").textContent = new Date().toLocaleTimeString();
+  const sec = (title, inner) => `<div class="recon-row" style="font-weight:600;color:var(--ink-dim)">${title}</div>${inner}`;
+  el("deriv").innerHTML =
+    sec("Staking pools", pools.length ? `<table><thead><tr><th>Cur</th><th>APR</th><th>Total staked</th></tr></thead><tbody>${
+      pools.map((p) => `<tr><td>${p.currency}</td><td class="up">${fmt(p.apr * 100, 2)}%</td><td class="mono-num">${fmt(p.total_staked, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
+    sec("Perp markets", mkts.length ? `<table><thead><tr><th>Symbol</th><th>Mark</th><th>Funding</th><th>Open</th><th>Margin</th></tr></thead><tbody>${
+      mkts.map((m) => `<tr><td>${m.symbol}</td><td class="mono-num">${fmt(m.mark_price, 2)}</td><td class="mono-num">${fmt(m.funding_rate * 100, 4)}%</td><td class="mono-num">${m.open}</td><td class="mono-num">${fmt(m.margin, 2)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
+    sec("Margin loans outstanding", loans.length ? `<table><thead><tr><th>Cur</th><th>Debt</th></tr></thead><tbody>${
+      loans.map((l) => `<tr><td>${l.currency}</td><td class="mono-num down">${fmt(l.debt, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">no open loans</div>`);
 }
 
 if (DEMO) bootDemo();
