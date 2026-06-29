@@ -16,7 +16,7 @@
 
 **[▶ 在线演示 · 交易终端](https://stars-labs.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)** —— 真实托管后端。点开即用：注册（秒过）→ 点「💰 Demo funds」→ 对着真实盘口下单。**⚙ Account** 面板覆盖全部功能：API 密钥、推荐返佣、提现白名单、链上充值、质押、现货保证金、永续合约。
 
-**[▶ 在线演示 · 管理后台](https://stars-labs.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)** —— 只读管理控制台：对账不变量、审批队列、账户、费率/风控、推荐返佣结算、衍生品与质押、审计日志，基于同一份真实数据。
+**[▶ 在线演示 · 管理后台](https://stars-labs.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc)** —— 测试开放管理台：登录或创建 Supabase Auth 用户即可试用审批、账户、费率/风控、推荐返佣结算、衍生品与质押、审计日志，基于同一份真实数据。
 
 **[★ 为什么选 pg-outcry —— 与顶级交易所对比 · 中小所优势（配图）](./docs/WHY.zh-CN.md)**
 
@@ -147,7 +147,7 @@ flowchart LR
   style E fill:#1a1626,stroke:#9b8cff
 ```
 
-1. **试用** —— 打开[在线演示](https://stars-labs.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)（交易）与[管理后台](https://stars-labs.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)，无需安装。
+1. **试用** —— 打开[在线演示](https://stars-labs.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)（交易）与[管理后台](https://stars-labs.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc)，无需安装。
 2. **本地运行** —— 见下方[快速开始](#快速开始)：`supabase start` + `supabase db reset` 即得到完整交易所（托管 Supabase 档见 [DEPLOY.md](./docs/DEPLOY.zh-CN.md)）。
 3. **自建高性能档** —— 原生 C 热路径、WAL 调优、行情推送：`./scripts/perf-tune-local.sh` → [DEPLOY.md › 自建](./docs/DEPLOY.zh-CN.md)。托管与自建之间「完全一致」的部分也在 [DEPLOY.md](./docs/DEPLOY.zh-CN.md) 里写明。
 4. **调到上限** —— 走一遍[调优阶梯](./docs/TUNING.zh-CN.md)，在你硬件上用 [`scripts/bench-ladder.sh`](./scripts/bench-ladder.sh) 与 [`scripts/bench-batch.sh`](./scripts/bench-batch.sh) 找到[批量大小](./docs/TUNING.zh-CN.md)的吞吐/延迟拐点。
@@ -161,6 +161,7 @@ supabase start          # Postgres + PostgREST + Realtime + Auth（本地）
 supabase db reset       # 应用全部迁移
 
 export ANON="$(supabase status -o json | jq -r .ANON_KEY)"
+export PUBLISHABLE="$(supabase status -o json | jq -r .PUBLISHABLE_KEY)"
 export SERVICE="$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
 
 # 灌入活跃的行情 + 蜡烛历史（演示）
@@ -170,7 +171,8 @@ export SERVICE="$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
 # 构建 WASM 引擎 + 启动终端
 cd web && npm install && npm run build:wasm && python3 -m http.server 4173
 #  交易终端 → http://127.0.0.1:4173
-#  管理后台 → http://127.0.0.1:4173/admin.html   （粘贴 service_role key）
+#  管理后台 → http://127.0.0.1:4173/admin.html
+#  测试版：任意 Supabase Auth 用户登录/创建后，默认都是管理员
 
 # 可选：原生 C 热路径 + 数据库调优（自建）
 ./scripts/perf-tune-local.sh
@@ -193,7 +195,8 @@ cd web && npm install && npm run build:wasm && python3 -m http.server 4173
 
 - **anon** —— 仅公共行情（盘口、成交带、品种列表），无 RPC。
 - **authenticated**（用户 JWT）—— 自限定 API：`place_order`、`cancel_order`、`request_deposit`、`request_withdrawal`。RLS 把所有读取限定在调用者自己的实体上。
-- **service_role**（后台 / 运营）—— 完整引擎 + 管理 RPC；绕过 RLS。含**批量**路径 `submit_orders(account, instrument, jsonb[])`（组提交；面向做市商 / 批量下单方）—— 与 `submit_order` 同属运营平面。
+- **authenticated operator**（用户 JWT）—— 当前测试版默认给每个已登录用户完整后台权限。`admin_operator_role` / `admin_role_permission` 仍保留在 schema 中，后续收紧时可继续用；`treasury`、`risk`、`support`、`finance`、`security`、`auditor`、`super_admin` 等角色映射到细粒度权限（如 `wallet.approve`、`market.write`、`audit.read`）。
+- **service_role**（仅服务端 root）—— 用于 CI、可信后端任务、首次授权以及批量路径 `submit_orders(account, instrument, jsonb[])`。不要下发到浏览器。
 - `9900_lockdown.sql` 撤销 public/anon/authenticated 对每个引擎函数的 EXECUTE，只重新放行白名单，因此内部辅助函数（`create_trade`、`update_price_level` 等）客户端无法调用。
 
 ## 实时频道

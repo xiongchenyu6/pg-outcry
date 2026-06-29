@@ -12,16 +12,18 @@
 <body class="admin">
 <div class="scan"></div>
 
-<!-- gate: service-role key -->
+<!-- gate: Supabase Auth operator login -->
 <div id="gate">
   <div class="boot">
-    <div class="boot__bar"><span class="dot"></span><span class="label">privileged · service_role plane</span></div>
+    <div class="boot__bar"><span class="dot"></span><span class="label">privileged · test-open RBAC</span></div>
     <div class="boot__body">
       <div class="wordmark">OUTCRY<small>back-office terminal</small></div>
-      <p class="tag" style="color:var(--coral)">⚠ This console uses the <b>service_role</b> key — full admin, bypasses RLS. Use only on a trusted machine. The key is kept in <b>sessionStorage</b> and cleared on lock.</p>
+      <p class="tag" style="color:var(--amber)">Test access uses Supabase Auth; every signed-in user is an admin in this build. Use a publishable key here; keep <b>service_role</b> on servers only.</p>
       <div class="field"><span class="label">API URL</span><input id="api" value="http://127.0.0.1:54321" /></div>
-      <div class="field"><span class="label">service_role key</span><input id="svc" type="password" placeholder="eyJ…" /></div>
-      <button class="btn btn--go" id="enter" style="background:var(--amber);border-color:var(--amber)">Open back-office →</button>
+      <div class="field"><span class="label">publishable / anon key</span><input id="anon" type="password" placeholder="sb_publishable_…" /></div>
+      <div class="field"><span class="label">operator email</span><input id="email" type="email" placeholder="ops@example.com" /></div>
+      <div class="field"><span class="label">password</span><input id="pass" type="password" placeholder="••••••••" /></div>
+      <button class="btn btn--go" id="enter" style="background:var(--amber);border-color:var(--amber)">Sign in / create →</button>
       <div class="msg" id="msg"></div>
     </div>
   </div>
@@ -55,9 +57,9 @@
       </nav>
       <div class="rail-status">
         <span class="label">Controls</span>
-        <div>service_role gated</div>
+        <div>RBAC gated</div>
         <div>append-only audit</div>
-        <div>RLS bypass operator</div>
+        <div>service_role server-only</div>
       </div>
     </aside>
 

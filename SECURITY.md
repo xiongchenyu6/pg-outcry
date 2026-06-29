@@ -22,8 +22,11 @@ We aim to acknowledge within a few days. Please include reproduction steps and i
 ## Hardening checklist for operators
 
 If you deploy this, at minimum:
+- Disable the test-open admin mode before production. The hosted test build grants every
+  signed-in Supabase Auth user full back-office permissions so reviewers can try the console.
 - Keep the `service_role` key server-side only; never ship it to browsers. The back-office
-  console is an **operator tool** — run it on a trusted, access-controlled machine.
+  console uses Supabase Auth plus database RBAC (`admin_operator_role` / `admin_role_permission`);
+  use `service_role` only from trusted servers, CI, scripts, or bootstrap flows.
 - Front the API with TLS, rate limiting, and WAF.
 - **2FA is delegated to the OAuth2 provider** (GitHub/Google enforce their own 2FA at login), so
   pg-outcry doesn't ship a separate TOTP system. To *mandate* 2FA, restrict login to OAuth (disable

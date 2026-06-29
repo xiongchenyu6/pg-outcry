@@ -50,7 +50,12 @@ arpc admin_set_fee '{"fee_type":"TAKER_FEE","currency_param":"EUR","percentage_p
 chk "fee row persisted" "$(psql "$PGURL" -tAc "select percentage from fee where type='TAKER_FEE' and currency_name='EUR'")" "0.1"
 chk "audit log has 4 admin actions" "$(psql "$PGURL" -tAc "select count(*) from admin_audit_log")" "4"
 
-echo "== a normal user cannot call admin RPC =="
-chk "admin RPC denied for user" "$(urpc "$AT" admin_suspend_entity "{\"entity_pub\":\"$APUB\"}" | jq -r .code)" "42501"
+echo "== test-open RBAC: signed-in users can call admin RPC during demo =="
+OPEN_ADMIN=$(urpc "$AT" admin_suspend_entity "{\"entity_pub\":\"$APUB\"}")
+OPEN_ADMIN_RESULT="ok"
+if [ -n "$OPEN_ADMIN" ] && echo "$OPEN_ADMIN" | jq -e 'type=="object" and (.message or .code)' >/dev/null 2>&1; then
+  OPEN_ADMIN_RESULT="$(msg "$OPEN_ADMIN")"
+fi
+chk "test-open admin RPC accepted" "$OPEN_ADMIN_RESULT" "ok"
 
 echo "result: $pass passed, $fail failed"; [ "$fail" -eq 0 ] && echo "PASS: risk + back-office" || exit 1

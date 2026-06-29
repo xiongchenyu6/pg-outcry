@@ -1,7 +1,8 @@
-// OUTCRY back-office — service_role admin console over the pure-PG CEX.
+// OUTCRY back-office — Supabase Auth + database RBAC console over the pure-PG CEX.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const el = (s) => document.getElementById(s);
 let sb = null;
+let ADMIN_PERMS = new Set();
 
 function toast(m, k = "") { const t = document.createElement("div"); t.className = "toast " + k; t.textContent = m; el("toasts").appendChild(t); setTimeout(() => t.remove(), 4200); }
 const fmt = (n, d = 2) => (n == null || isNaN(n)) ? "—" : Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -10,6 +11,10 @@ const rpc = async (fn, args) => { const { data, error } = await sb.rpc(fn, args)
 
 const _q = new URLSearchParams(location.search);
 const DEMO = _q.get("demo") === "1";
+const can = (...permissions) => permissions.some((p) => ADMIN_PERMS.has(p));
+const noPerm = (id, permission) => { el(id).innerHTML = `<div class="empty">Permission required: ${escH(permission)}</div>`; };
+const noPermCount = (id) => { const x = el(id); if (x) x.textContent = "restricted"; };
+const disabledAttr = (permission) => can(permission) ? "" : ` disabled title="requires ${permission}"`;
 const ADMIN_SECTIONS = {
   overview: ["Operations overview", "Control room", "Live exchange health, treasury queues, account controls, product risk, security oversight, and audit evidence."],
   treasury: ["Treasury operations", "Cash and custody", "Approve fiat-style wallet intents, run signer queues, configure chain assets, and inspect detected deposits."],
@@ -43,25 +48,78 @@ el("opsNav").querySelectorAll("[data-admin-section]").forEach((b) => {
 });
 setAdminSection("overview");
 
+function makeClient(api, anon, persistSession) {
+  return createClient(api, anon, {
+    auth: {
+      persistSession,
+      autoRefreshToken: persistSession,
+      detectSessionInUrl: false,
+      storage: window.sessionStorage,
+    },
+  });
+}
+
+async function openOperatorSession(api) {
+  const { data: perms, error } = await sb.rpc("current_admin_permissions");
+  if (error) {
+    el("msg").textContent = "RBAC check failed: " + error.message;
+    return false;
+  }
+  ADMIN_PERMS = new Set(perms || []);
+  if (!ADMIN_PERMS.size) {
+    await sb.auth.signOut();
+    el("msg").textContent = "operator has no back-office permissions";
+    return false;
+  }
+  sessionStorage.setItem("oc_admin_api", api);
+  el("gate").style.display = "none";
+  el("app").classList.add("live");
+  refreshAll();
+  return true;
+}
+
 // ---- gate ----
 el("api").value = sessionStorage.getItem("oc_admin_api") || el("api").value;
 if (_q.get("api")) el("api").value = _q.get("api");
-if (sessionStorage.getItem("oc_admin_svc")) { el("svc").value = sessionStorage.getItem("oc_admin_svc"); }
+el("anon").value = sessionStorage.getItem("oc_admin_anon") || _q.get("anon") || "";
+el("email").value = sessionStorage.getItem("oc_admin_email") || "";
 el("enter").onclick = enter;
-el("svc").addEventListener("keydown", (e) => { if (e.key === "Enter") enter(); });
+el("pass").addEventListener("keydown", (e) => { if (e.key === "Enter") enter(); });
 async function enter() {
-  const api = el("api").value.trim(), svc = el("svc").value.trim();
-  if (!svc) { el("msg").textContent = "service_role key required"; return; }
-  sb = createClient(api, svc, { auth: { persistSession: false } });
-  // probe: reconcile() is service_role-only — confirms the key works
-  const { error } = await sb.rpc("reconcile");
-  if (error) { el("msg").textContent = "key rejected: " + error.message; return; }
-  sessionStorage.setItem("oc_admin_api", api); sessionStorage.setItem("oc_admin_svc", svc);
-  el("gate").style.display = "none"; el("app").classList.add("live");
-  refreshAll();
+  const api = el("api").value.trim(), anon = el("anon").value.trim();
+  const email = el("email").value.trim(), password = el("pass").value;
+  if (!api || !anon || !email || !password) {
+    el("msg").textContent = "API URL, publishable key, email, and password are required";
+    return;
+  }
+  sb = makeClient(api, anon, true);
+  const login = await sb.auth.signInWithPassword({ email, password });
+  if (login.error) {
+    el("msg").textContent = "sign-in failed; creating test operator...";
+    const created = await sb.auth.signUp({ email, password });
+    if (created.error) {
+      el("msg").textContent = `sign-in/create rejected: ${login.error.message}; ${created.error.message}`;
+      return;
+    }
+    if (!created.data?.session) {
+      el("msg").textContent = "test operator created; confirm email, then sign in";
+      return;
+    }
+  }
+  sessionStorage.setItem("oc_admin_anon", anon);
+  sessionStorage.setItem("oc_admin_email", email);
+  await openOperatorSession(api);
 }
-el("lock").onclick = () => { sessionStorage.removeItem("oc_admin_svc"); location.reload(); };
+el("lock").onclick = async () => { await sb?.auth?.signOut(); location.reload(); };
 el("refresh").onclick = refreshAll;
+
+async function bootSession() {
+  const api = el("api").value.trim(), anon = el("anon").value.trim();
+  if (!api || !anon) return;
+  sb = makeClient(api, anon, true);
+  const { data } = await sb.auth.getSession();
+  if (data?.session) await openOperatorSession(api);
+}
 
 async function refreshAll() {
   await Promise.all([
@@ -69,7 +127,19 @@ async function refreshAll() {
     loadReferrals(), loadChainOps(), loadApiKeys(), loadDeriv(), loadAudit(),
   ]);
   loadStats();
+  syncActionState();
   el("opsUpdated").textContent = new Date().toLocaleTimeString();
+}
+
+function syncActionState() {
+  const pairs = [
+    ["setFee", "market.write"],
+    ["setRisk", "market.write"],
+  ];
+  for (const [id, perm] of pairs) {
+    const b = el(id);
+    if (b) { b.disabled = !can(perm); b.title = can(perm) ? "" : `requires ${perm}`; }
+  }
 }
 
 // ---- stats ----
@@ -87,6 +157,13 @@ function loadStats() {
 
 // ---- reconciliation ----
 async function loadRecon() {
+  if (!can("recon.read")) {
+    S.reconFails = "—";
+    el("reconBadge").textContent = "RBAC";
+    el("reconBadge").style.color = "var(--amber)";
+    noPerm("recon", "recon.read");
+    return;
+  }
   const { data } = await sb.from("reconciliation_report").select("check_name,failures,status");
   const rows = data || [];
   S.reconFails = rows.filter((r) => r.status !== "PASS").length;
@@ -99,14 +176,23 @@ async function loadRecon() {
 
 // ---- approvals ----
 async function loadApprovals() {
+  if (!can("wallet.read")) {
+    S.pending = "—";
+    noPermCount("apprCount");
+    noPerm("approvals", "wallet.read");
+    mirrorText("apprCount", "apprCount2");
+    mirrorHtml("approvals", "approvalsMirror");
+    return;
+  }
   const { data } = await sb.from("wallet_request").select("pub_id,direction,currency,amount,status,created_at,app_entity(external_id)").eq("status", "PENDING").order("created_at");
   const rows = data || [];
   S.pending = rows.length;
+  const canApprove = can("wallet.approve");
   el("apprCount").textContent = `${rows.length} pending`;
   el("approvals").innerHTML = rows.length ? `<table><thead><tr><th>When</th><th>Entity</th><th>Dir</th><th>Cur</th><th>Amount</th><th>Action</th></tr></thead><tbody>${
     rows.map((r) => `<tr><td>${new Date(r.created_at).toLocaleTimeString()}</td><td>${(r.app_entity?.external_id || "—").slice(0, 14)}</td>
       <td class="${r.direction === "DEPOSIT" ? "up" : "down"}">${r.direction}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.amount)}</td>
-      <td><div class="act"><button class="ok" data-appr="${r.pub_id}">approve</button><button class="no" data-rej="${r.pub_id}">reject</button></div></td></tr>`).join("")}</tbody></table>`
+      <td>${canApprove ? `<div class="act"><button class="ok" data-appr="${r.pub_id}">approve</button><button class="no" data-rej="${r.pub_id}">reject</button></div>` : `<span class="label">read only</span>`}</td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">No pending wallet requests</div>`;
   mirrorText("apprCount", "apprCount2");
   mirrorHtml("approvals", "approvalsMirror");
@@ -116,6 +202,13 @@ async function loadApprovals() {
 
 // ---- withdrawal signer queue ----
 async function loadWithdrawQueue() {
+  if (!can("wallet.read", "withdrawal.sign")) {
+    noPermCount("wdqCount");
+    noPerm("withdrawQueue", "wallet.read or withdrawal.sign");
+    mirrorText("wdqCount", "wdqCount2");
+    mirrorHtml("withdrawQueue", "withdrawQueueMirror");
+    return;
+  }
   const { data } = await sb.from("wallet_request")
     .select("pub_id,direction,currency,amount,to_address,status,created_at,resolved_at,signing_claimed_at,broadcast_txid,broadcast_at,confirmed_at,app_entity(external_id)")
     .eq("direction", "WITHDRAWAL")
@@ -127,11 +220,12 @@ async function loadWithdrawQueue() {
   const open = rows.filter((r) => !r.confirmed_at).length;
   el("wdqCount").textContent = open ? `${open} open` : "clear";
   const stage = (r) => r.confirmed_at ? "confirmed" : r.broadcast_txid ? "broadcast" : r.signing_claimed_at ? "claimed" : "queued";
-  el("withdrawQueue").innerHTML = `<div class="adm-form"><button class="btn-sm" data-claim-withdrawal="1">Claim next to sign</button></div>` +
+  const canSign = can("withdrawal.sign");
+  el("withdrawQueue").innerHTML = (canSign ? `<div class="adm-form"><button class="btn-sm" data-claim-withdrawal="1">Claim next to sign</button></div>` : "") +
     (rows.length ? `<table><thead><tr><th>Request</th><th>Entity</th><th>Cur</th><th>Amt</th><th>To</th><th>Stage</th><th>Action</th></tr></thead><tbody>${
       rows.map((r) => `<tr><td class="mono-num" title="${escH(r.pub_id)}">${escH(r.pub_id.slice(0, 10))}</td><td>${escH((r.app_entity?.external_id || "—").slice(0, 14))}</td>
         <td>${escH(r.currency)}</td><td class="mono-num">${fmt(r.amount, 4)}</td><td class="mono-num" title="${escH(r.to_address)}">${escH((r.to_address || "").slice(0, 14))}</td>
-        <td><span class="pill ${stage(r).toUpperCase()}">${stage(r)}</span></td><td>${r.confirmed_at ? "" : r.broadcast_txid
+        <td><span class="pill ${stage(r).toUpperCase()}">${stage(r)}</span></td><td>${!canSign ? '<span class="label">read only</span>' : r.confirmed_at ? "" : r.broadcast_txid
           ? `<div class="act"><button class="ok" data-confirm-wd="${escH(r.pub_id)}">confirm</button></div>`
           : `<div class="act"><input class="txid-mini" data-txid-for="${escH(r.pub_id)}" placeholder="txid"/><button class="ok" data-broadcast-wd="${escH(r.pub_id)}">broadcast</button></div>`}</td></tr>`).join("")}</tbody></table>`
       : `<div class="empty">No on-chain withdrawals waiting for signer status.</div>`);
@@ -156,14 +250,20 @@ async function loadWithdrawQueue() {
 
 // ---- accounts ----
 async function loadAccounts() {
+  if (!can("account.read")) {
+    noPermCount("acctCount");
+    noPerm("accounts", "account.read");
+    return;
+  }
   const { data } = await sb.from("app_entity").select("pub_id,external_id,type,status").order("created_at", { ascending: false }).limit(100);
   const rows = data || [];
   S.entities = rows.length; S.suspended = rows.filter((r) => r.status === "SUSPENDED").length;
+  const canSuspend = can("account.suspend");
   el("acctCount").textContent = `${rows.length}`;
   el("accounts").innerHTML = `<table><thead><tr><th>External ID</th><th>Type</th><th>Status</th><th>Action</th></tr></thead><tbody>${
     rows.map((r) => `<tr><td title="${r.pub_id}">${(r.external_id || "—").slice(0, 22)}</td><td>${r.type}</td>
       <td><span class="pill ${r.status}">${r.status}</span></td>
-      <td>${r.type === "MASTER" ? "" : (r.status === "SUSPENDED"
+      <td>${!canSuspend || r.type === "MASTER" ? "" : (r.status === "SUSPENDED"
         ? `<div class="act"><button class="ok" data-unsus="${r.pub_id}">unsuspend</button></div>`
         : `<div class="act"><button class="no" data-sus="${r.pub_id}">suspend</button></div>`)}</td></tr>`).join("")}</tbody></table>`;
   el("accounts").querySelectorAll("[data-sus]").forEach((b) => b.onclick = async () => { await rpc("admin_suspend_entity", { entity_pub: b.dataset.sus, reason: "admin console" }); toast("Suspended", "warn"); refreshAll(); });
@@ -172,12 +272,17 @@ async function loadAccounts() {
 
 // ---- fees ----
 async function loadFees() {
+  if (!can("market.read")) {
+    noPerm("fees", "market.read");
+    return;
+  }
   const { data } = await sb.from("fee").select("type,currency_name,percentage,min,max").order("type");
   el("fees").innerHTML = (data && data.length) ? `<table><thead><tr><th>Type</th><th>Cur</th><th>%</th><th>min</th><th>max</th></tr></thead><tbody>${
     data.map((f) => `<tr><td>${f.type}</td><td>${f.currency_name}</td><td class="mono-num">${f.percentage ?? "—"}</td><td class="mono-num">${f.min ?? "—"}</td><td class="mono-num">${f.max ?? "—"}</td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">No fees configured</div>`;
 }
 el("setFee").onclick = async () => {
+  if (!can("market.write")) return toast("requires market.write", "err");
   const t = el("feeType").value.trim(), c = el("feeCur").value.trim(), p = parseFloat(el("feePct").value);
   if (!t || !c || isNaN(p)) { toast("type, currency, % required", "err"); return; }
   await rpc("admin_set_fee", { fee_type: t, currency_param: c, percentage_param: p }); toast("Fee set"); loadFees(); loadAudit();
@@ -185,12 +290,17 @@ el("setFee").onclick = async () => {
 
 // ---- risk ----
 async function loadRisk() {
+  if (!can("market.read")) {
+    noPerm("risk", "market.read");
+    return;
+  }
   const { data } = await sb.from("instrument_risk").select("max_order_amount,max_order_notional,price_band_pct,enabled,instrument(name)");
   el("risk").innerHTML = (data && data.length) ? `<table><thead><tr><th>Instrument</th><th>Max amt</th><th>Max notional</th><th>Band %</th></tr></thead><tbody>${
     data.map((r) => `<tr><td>${r.instrument?.name || "—"}</td><td class="mono-num">${fmt(r.max_order_amount, 2)}</td><td class="mono-num">${fmt(r.max_order_notional, 0)}</td><td class="mono-num">${r.price_band_pct ?? "—"}</td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">No risk configured</div>`;
 }
 el("setRisk").onclick = async () => {
+  if (!can("market.write")) return toast("requires market.write", "err");
   const i = el("rInst").value.trim(), a = parseFloat(el("rAmt").value), nn = parseFloat(el("rNot").value), b = parseFloat(el("rBand").value);
   if (!i) { toast("instrument required", "err"); return; }
   await rpc("admin_set_instrument_risk", { instrument_name_param: i, max_amount: a || null, max_notional: nn || null, band_pct: b || null }); toast("Risk set"); loadRisk(); loadAudit();
@@ -198,6 +308,14 @@ el("setRisk").onclick = async () => {
 
 // ---- referral payouts (operator) ----
 async function loadReferrals() {
+  if (!can("referral.read")) {
+    S.refUnpaid = "—";
+    noPermCount("refCount");
+    noPerm("referrals", "referral.read");
+    mirrorText("refCount", "refCount2");
+    mirrorHtml("referrals", "referralsMirror");
+    return;
+  }
   const [{ data: earn }, { data: ents }] = await Promise.all([
     sb.from("referral_earning").select("referrer_entity,currency,amount").is("paid_at", null),
     sb.from("app_entity").select("id,pub_id,external_id"),
@@ -213,10 +331,11 @@ async function loadReferrals() {
     return { pub: e.pub_id, label: e.external_id || e.pub_id, currency, total };
   }).sort((a, b) => b.total - a.total);
   S.refUnpaid = rows.length;
+  const canPay = can("referral.pay");
   el("refCount").textContent = rows.length ? `${rows.length} owed` : "all settled";
   el("referrals").innerHTML = rows.length ? `<table><thead><tr><th>Referrer</th><th>Cur</th><th>Unpaid</th><th>Action</th></tr></thead><tbody>${
     rows.map((r) => `<tr><td title="${r.pub}">${(r.label || "—").slice(0, 18)}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.total, 4)}</td>
-      <td><div class="act"><button class="ok" data-pay="${r.pub}" data-cur="${r.currency}">pay</button></div></td></tr>`).join("")}</tbody></table>`
+      <td>${canPay ? `<div class="act"><button class="ok" data-pay="${r.pub}" data-cur="${r.currency}">pay</button></div>` : `<span class="label">read only</span>`}</td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">No unpaid referral earnings</div>`;
   mirrorText("refCount", "refCount2");
   mirrorHtml("referrals", "referralsMirror");
@@ -228,33 +347,40 @@ async function loadReferrals() {
 
 // ---- chain deposits (operator config + manual credit) ----
 async function loadChainOps() {
+  if (!can("chain.read")) {
+    noPermCount("chainCount");
+    noPerm("chainOps", "chain.read");
+    return;
+  }
   const [{ data: chains }, { data: assets }, { data: deps }] = await Promise.all([
     sb.from("chain").select("name,kind,rpc_url,confirmations,enabled").order("name"),
     sb.from("chain_asset").select("chain,token,currency,decimals").order("chain"),
     sb.from("chain_deposit").select("chain,txid,address,currency,amount,confirmations,credited_at,created_at").order("created_at", { ascending: false }).limit(20),
   ]);
+  const canWrite = can("chain.write");
   el("chainCount").textContent = `${chains?.length || 0} chains`;
   el("chainOps").innerHTML =
     ((chains && chains.length) ? `<table><thead><tr><th>Chain</th><th>Kind</th><th>Enabled</th><th>Conf</th><th>RPC</th></tr></thead><tbody>${
       chains.map((c) => `<tr><td>${escH(c.name)}</td><td>${escH(c.kind)}</td><td class="${c.enabled ? "up" : "amber"}">${c.enabled ? "on" : "off"}</td><td class="mono-num">${c.confirmations}</td><td title="${escH(c.rpc_url || "")}">${c.rpc_url ? "set" : "—"}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No chain config</div>`) +
-    `<div class="adm-form">
+    (canWrite ? `<div class="adm-form">
       <div class="row3"><input id="chainName" placeholder="ethereum-sepolia" /><input id="chainRpc" placeholder="rpc url (blank keep)" /><input id="chainConf" type="number" step="1" placeholder="confirmations" /></div>
       <div class="row3"><select id="chainEnabled"><option value="">keep enabled</option><option value="true">enabled</option><option value="false">disabled</option></select><button class="btn-sm" id="setChainConfig" style="grid-column:span 2">Set chain config</button></div>
-    </div>` +
+    </div>` : "") +
     ((assets && assets.length) ? `<table><thead><tr><th>Chain</th><th>Token</th><th>Currency</th><th>Decimals</th></tr></thead><tbody>${
       assets.map((a) => `<tr><td>${escH(a.chain)}</td><td class="mono-num" title="${escH(a.token)}">${escH((a.token || "").slice(0, 18))}</td><td>${escH(a.currency)}</td><td class="mono-num">${a.decimals}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No chain assets mapped</div>`) +
-    `<div class="adm-form">
+    (canWrite ? `<div class="adm-form">
       <div class="row3"><input id="assetChain" placeholder="chain" /><input id="assetToken" placeholder="native or token" /><input id="assetCur" placeholder="EUR" /></div>
       <div class="row3"><input id="assetDecimals" type="number" step="1" placeholder="decimals" /><button class="btn-sm" id="setChainAsset" style="grid-column:span 2">Set asset mapping</button></div>
-    </div>` +
-    `<div class="adm-form">
+    </div>` : "") +
+    (canWrite ? `<div class="adm-form">
       <div class="row3"><input id="depChain" placeholder="chain" /><input id="depTx" placeholder="txid" /><input id="depIdx" type="number" step="1" value="0" placeholder="log idx" /></div>
       <div class="row3"><input id="depAddr" placeholder="watched address" /><input id="depCur" placeholder="currency" /><input id="depAmt" type="number" step="0.000001" placeholder="amount" /></div>
       <div class="row3"><input id="depConf" type="number" step="1" placeholder="confirmations" /><button class="btn-sm" id="manualCredit" style="grid-column:span 2">Manual credit deposit</button></div>
-    </div>` +
+    </div>` : "") +
     ((deps && deps.length) ? `<table><thead><tr><th>When</th><th>Chain</th><th>Tx</th><th>Cur</th><th>Amount</th><th>Status</th></tr></thead><tbody>${
       deps.map((d) => `<tr><td>${new Date(d.created_at).toLocaleString()}</td><td>${escH(d.chain)}</td><td class="mono-num" title="${escH(d.txid)}">${escH((d.txid || "").slice(0, 12))}</td><td>${escH(d.currency)}</td><td class="mono-num">${fmt(d.amount, 6)}</td><td>${d.credited_at ? '<span class="up">credited</span>' : '<span class="amber">pending</span>'}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No detected chain deposits</div>`);
 
+  if (!canWrite) return;
   el("setChainConfig").onclick = async () => {
     const name = el("chainName").value.trim();
     if (!name) return toast("chain required", "err");
@@ -296,16 +422,22 @@ async function loadChainOps() {
 
 // ---- API key oversight ----
 async function loadApiKeys() {
+  if (!can("security.read")) {
+    noPermCount("keyCount");
+    noPerm("apiKeys", "security.read");
+    return;
+  }
   const { data } = await sb.from("api_key")
     .select("key_id,label,scopes,last_used_at,revoked_at,created_at,app_entity(external_id)")
     .order("created_at", { ascending: false })
     .limit(80);
   const rows = data || [];
   const active = rows.filter((k) => !k.revoked_at).length;
+  const canRevoke = can("security.revoke_api_key");
   el("keyCount").textContent = `${active} active`;
   el("apiKeys").innerHTML = rows.length ? `<table><thead><tr><th>Key</th><th>Entity</th><th>Label</th><th>Scopes</th><th>Last used</th><th></th></tr></thead><tbody>${
     rows.map((k) => `<tr><td class="mono-num">${escH(k.key_id)}</td><td>${escH((k.app_entity?.external_id || "—").slice(0, 14))}</td><td>${escH(k.label || "—")}</td><td>${escH((k.scopes || []).join(","))}</td>
-      <td>${k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</td><td>${k.revoked_at ? '<span class="down">revoked</span>' : `<div class="act"><button class="no" data-revoke-key="${escH(k.key_id)}">revoke</button></div>`}</td></tr>`).join("")}</tbody></table>`
+      <td>${k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</td><td>${k.revoked_at ? '<span class="down">revoked</span>' : canRevoke ? `<div class="act"><button class="no" data-revoke-key="${escH(k.key_id)}">revoke</button></div>` : `<span class="label">read only</span>`}</td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">No API keys</div>`;
   el("apiKeys").querySelectorAll("[data-revoke-key]").forEach((b) => b.onclick = async () => {
     await rpc("admin_revoke_api_key", { key_id_param: b.dataset.revokeKey });
@@ -315,6 +447,11 @@ async function loadApiKeys() {
 
 // ---- derivatives & staking (operator) ----
 async function loadDeriv() {
+  if (!can("derivatives.read")) {
+    noPermCount("derivWhen");
+    noPerm("deriv", "derivatives.read");
+    return;
+  }
   const [{ data: pools }, { data: stakeCfg }, { data: terms }, { data: mkts }, { data: perps }, { data: loans }] = await Promise.all([
     sb.from("stake_pool").select("currency,apr,total_staked").order("currency"),
     sb.from("stake_config").select("unbond_seconds").maybeSingle(),
@@ -333,35 +470,37 @@ async function loadDeriv() {
   const loanByCur = new Map();
   for (const l of (loans || [])) loanByCur.set(l.currency, (loanByCur.get(l.currency) || 0) + Number(l.principal) + Number(l.accrued));
   const sec = (title, inner) => `<div class="recon-row" style="font-weight:600;color:var(--ink-dim)">${title}</div>${inner}`;
+  const canWrite = can("derivatives.write");
   el("deriv").innerHTML =
     sec("Staking pools", (pools && pools.length) ? `<table><thead><tr><th>Cur</th><th>APR</th><th>Total staked</th></tr></thead><tbody>${
         pools.map((p) => `<tr><td>${escH(p.currency)}</td><td class="up">${fmt(p.apr * 100, 2)}%</td><td class="mono-num">${fmt(p.total_staked, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
-    `<div class="adm-form">
+    (canWrite ? `<div class="adm-form">
       <div class="row3"><input id="stAdmCur" placeholder="EUR" /><input id="stAdmApr" type="number" step="0.01" placeholder="APR %" /><input id="stAdmUnbond" type="number" step="1" value="${stakeCfg?.unbond_seconds ?? 604800}" placeholder="unbond sec" /></div>
       <button class="btn-sm" id="setStakePool">Set stake pool</button>
-    </div>` +
+    </div>` : "") +
     sec("Margin terms", terms ? `<table><thead><tr><th>Max leverage</th><th>Maintenance</th><th>Borrow APR</th></tr></thead><tbody><tr>
         <td class="mono-num">${fmt(terms.max_leverage, 0)}×</td><td class="mono-num">${fmt(terms.maintenance_ratio * 100, 2)}%</td><td class="mono-num">${fmt(terms.borrow_apr * 100, 2)}%</td></tr></tbody></table>` : `<div class="empty">none</div>`) +
-    `<div class="adm-form">
+    (canWrite ? `<div class="adm-form">
       <div class="row3"><input id="mgAdmLev" type="number" step="0.1" value="${terms?.max_leverage ?? 3}" placeholder="max lev" /><input id="mgAdmMaint" type="number" step="0.01" value="${terms ? terms.maintenance_ratio * 100 : 10}" placeholder="maint %" /><input id="mgAdmApr" type="number" step="0.01" value="${terms ? terms.borrow_apr * 100 : 10}" placeholder="borrow APR %" /></div>
       <button class="btn-sm" id="setMarginTerms">Set margin terms</button>
-    </div>` +
+    </div>` : "") +
     sec("Perp markets", (mkts && mkts.length) ? `<table><thead><tr><th>Symbol</th><th>Mark</th><th>Funding</th><th>Open</th><th>Margin</th></tr></thead><tbody>${
         mkts.map((m) => { const e = perpBySym.get(m.symbol) || { n: 0, marg: 0 }; return `<tr><td>${escH(m.symbol)}</td><td class="mono-num">${fmt(m.mark_price, 2)}</td><td class="mono-num">${fmt(m.funding_rate * 100, 4)}%</td><td class="mono-num">${e.n}</td><td class="mono-num">${fmt(e.marg, 2)}</td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">none</div>`) +
-    `<div class="adm-form">
+    (canWrite ? `<div class="adm-form">
       <div class="row3"><input id="ppAdmSym" placeholder="BTC-PERP" /><input id="ppAdmIndex" placeholder="BTC_EUR" /><input id="ppAdmCur" placeholder="EUR" /></div>
       <div class="row3"><input id="ppAdmMark" type="number" step="0.01" placeholder="mark" /><input id="ppAdmFunding" type="number" step="0.0001" placeholder="funding %" /><input id="ppAdmLev" type="number" step="0.1" placeholder="max lev" /></div>
       <div class="row3"><input id="ppAdmMaint" type="number" step="0.01" placeholder="maint %" /><button class="btn-sm" id="setPerpMarket" style="grid-column:span 2">Set perp market</button></div>
-    </div>` +
+    </div>` : "") +
     sec("Margin loans outstanding", loanByCur.size ? `<table><thead><tr><th>Cur</th><th>Debt (principal+accrued)</th></tr></thead><tbody>${
         [...loanByCur.entries()].map(([c, d]) => `<tr><td>${escH(c)}</td><td class="mono-num down">${fmt(d, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">no open loans</div>`) +
-    `<div class="adm-form">
+    (canWrite ? `<div class="adm-form">
       <div class="act">
         <button class="ok" id="runDerivJobs">run marks/liquidations/unbond</button>
         <button class="ok" id="runFundingNow">apply funding now</button>
       </div>
-    </div>`;
+    </div>` : "");
 
+  if (!canWrite) return;
   el("setStakePool").onclick = async () => {
     const cur = el("stAdmCur").value.trim(), apr = numOrNull("stAdmApr"), ub = numOrNull("stAdmUnbond");
     if (!cur || apr == null) return toast("stake currency + APR required", "err");
@@ -400,6 +539,11 @@ async function loadDeriv() {
 
 // ---- audit ----
 async function loadAudit() {
+  if (!can("audit.read")) {
+    noPermCount("auditCount");
+    noPerm("audit", "audit.read");
+    return;
+  }
   const { data } = await sb.from("admin_audit_log").select("action,target,detail,created_at").order("created_at", { ascending: false }).limit(40);
   const rows = data || [];
   const dayAgo = Date.now() - 864e5; S.audit = rows.filter((r) => new Date(r.created_at).getTime() > dayAgo).length;
@@ -505,5 +649,5 @@ async function refreshDemo() {
 }
 
 if (DEMO) bootDemo();
-// auto-enter if key already in session (operator mode only)
-else if (sessionStorage.getItem("oc_admin_svc")) enter();
+// auto-enter if the operator still has a Supabase Auth session in sessionStorage
+else bootSession();

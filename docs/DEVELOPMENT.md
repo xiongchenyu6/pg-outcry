@@ -51,8 +51,8 @@ See [`PERFORMANCE.md`](./PERFORMANCE.md) for the scaling plan (sharding, partiti
 | `scripts/smoke-realtime.mjs` | Asserts a trade is broadcast over websocket |
 | `scripts/smoke-stage2.sh` | Advisory-locked submit + read API (partial fill, settlement, reservation); needs `SERVICE` |
 | `scripts/smoke-marketdata.mjs` | Asserts L2 `price_level` updates push over realtime |
-| `scripts/smoke-stage3.sh` | GoTrue signup → auto account, JWT trading, RLS isolation, admin-only enforcement |
-| `scripts/smoke-stage4.sh` | Wallet deposit/withdraw/reject ledger + reservations + admin-only |
+| `scripts/smoke-stage3.sh` | GoTrue signup → auto account, JWT trading, RLS isolation, API whitelist enforcement |
+| `scripts/smoke-stage4.sh` | Wallet deposit/withdraw/reject ledger + reservations + test-open admin access |
 | `scripts/smoke-stage5.sh` | Risk controls (band/limits) + back-office (suspend/fee/risk/audit) |
 | `scripts/smoke-stage6.mjs` | Authenticated private realtime feed (own orders/fills/wallet, no leak) |
 | `examples/private-feed.mjs` | Copy-paste frontend client for the private feed |
@@ -95,8 +95,9 @@ node scripts/smoke-marketdata.mjs
 
 - **anon** — public market data only (`price_level`, `trade`, `instrument`, `currency` via table SELECT). No RPCs.
 - **authenticated** (user JWT) — self-scoped API: `place_order`, `cancel_order`, `request_deposit`, `request_withdrawal`, `current_app_entity_*`. RLS limits all reads to the caller's own entity.
-- **service_role** (back-office) — full engine + admin RPCs (`process_transfer`, `approve_wallet_request`, …); bypasses RLS.
-- `9900_lockdown.sql` revokes EXECUTE on every engine function from public/anon/authenticated and re-grants only the whitelist, so internal helpers (`create_trade`, `update_price_level`, …) are unreachable by clients. It runs last so it also covers functions added by later migrations.
+- **authenticated operator** (user JWT) — the current hosted test build grants every signed-in user full back-office permissions. `admin_operator_role` / `admin_role_permission` remain available for later tightening across approvals, accounts, market/risk, derivatives, security, and audit.
+- **service_role** — server-side root for CI, trusted jobs, bootstrap, and raw engine operations; never required by the browser back-office.
+- `9900_lockdown.sql` revokes EXECUTE on every engine function from public/anon/authenticated and re-grants only the whitelist, so internal helpers (`create_trade`, `update_price_level`, …) are unreachable by clients. Later migrations explicitly revoke/grant their own new RPCs.
 
 ## Realtime feeds
 

@@ -16,7 +16,7 @@ Matching · Settlement · Wallet · Risk · Realtime · Auth — **no applicatio
 
 **[▶ Live demo — trading terminal](https://stars-labs.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)** — real hosted backend. Sign up (instant), click **💰 Demo funds**, and trade against a live order book. The **⚙ Account** panel exercises every feature: API keys, referral, withdrawal whitelist, on-chain deposits, staking, spot margin, and perpetual futures.
 
-**[▶ Live demo — back-office](https://stars-labs.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1)** — read-only admin console: reconciliation invariants, approvals queue, accounts, fees/risk, referral payouts, derivatives & staking, and audit log on the same live data.
+**[▶ Live demo — back-office](https://stars-labs.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc)** — test-open admin console: sign in or create a Supabase Auth user to try approvals, accounts, fees/risk, referral payouts, derivatives & staking, and audit on the same live data.
 
 **[★ Why pg-outcry — comparison vs top-tier exchanges & the SMB advantage (diagrams)](./docs/WHY.md)**
 
@@ -149,7 +149,7 @@ flowchart LR
   style E fill:#1a1626,stroke:#9b8cff
 ```
 
-1. **Try it** — open the [live demo](https://stars-labs.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1) (trading) and the [back-office](https://stars-labs.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1). Nothing to install.
+1. **Try it** — open the [live demo](https://stars-labs.github.io/pg-outcry/?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc&demo=1) (trading) and the [back-office](https://stars-labs.github.io/pg-outcry/admin.html?api=https://axtziasfallmdgssbgsl.supabase.co&anon=sb_publishable_j1Jr-NMeKb_P29JcBRhz6Q_0ZkbVzUc). Nothing to install.
 2. **Run it locally** — [Quickstart](#quickstart) below: `supabase start` + `supabase db reset` gives you the whole exchange (hosted-Supabase profile in [DEPLOY.md](./docs/DEPLOY.md#demo-deploy-to-hosted-supabase)).
 3. **Self-host the high-performance profile** — native C hot-path, WAL tunables, and the market-data ticker: `./scripts/perf-tune-local.sh` → [DEPLOY.md › Local high-performance](./docs/DEPLOY.md#local-high-performance-self-host). What's identical across hosted vs self-host is spelled out in [DEPLOY.md](./docs/DEPLOY.md#whats-identical-across-both).
 4. **Tune to the ceiling** — walk the [tuning ladder](./docs/TUNING.md) and pick the [batch size](./docs/TUNING.md#batch-order-submission-group-commit--tuning-the-batch-size) at your throughput/latency knee, measuring on your hardware with [`scripts/bench-ladder.sh`](./scripts/bench-ladder.sh) and [`scripts/bench-batch.sh`](./scripts/bench-batch.sh).
@@ -163,6 +163,7 @@ supabase start          # Postgres + PostgREST + Realtime + Auth (local)
 supabase db reset       # apply all migrations
 
 export ANON="$(supabase status -o json | jq -r .ANON_KEY)"
+export PUBLISHABLE="$(supabase status -o json | jq -r .PUBLISHABLE_KEY)"
 export SERVICE="$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
 
 # seed a lively market + candle history (demo)
@@ -172,7 +173,8 @@ export SERVICE="$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
 # build the WASM engine + serve the terminal
 cd web && npm install && npm run build:wasm && python3 -m http.server 4173
 #  trader terminal → http://127.0.0.1:4173
-#  back-office      → http://127.0.0.1:4173/admin.html   (paste the service_role key)
+#  back-office      → http://127.0.0.1:4173/admin.html
+#  test build: sign in or create any Supabase Auth user; every signed-in user is admin
 
 # optional: native C hot-path + DB tunables (self-host)
 ./scripts/perf-tune-local.sh
@@ -195,7 +197,8 @@ Run the verification suite (from repo root, with `ANON`/`SERVICE` exported): the
 
 - **anon** — public market data only (order book, tape, instruments). No RPCs.
 - **authenticated** (user JWT) — self-scoped API: `place_order`, `cancel_order`, `request_deposit`, `request_withdrawal`. RLS limits all reads to the caller's own entity.
-- **service_role** (back-office / operator) — full engine + admin RPCs; bypasses RLS. Includes the **batch** path `submit_orders(account, instrument, jsonb[])` (group-commit; for market-maker / bulk submitters) — operator-plane, like `submit_order`.
+- **authenticated operator** (user JWT) — current test build grants every signed-in user full back-office permissions by default. `admin_operator_role` / `admin_role_permission` remain in the schema for later tightening; roles such as `treasury`, `risk`, `support`, `finance`, `security`, `auditor`, and `super_admin` map to granular permissions (`wallet.approve`, `market.write`, `audit.read`, etc.).
+- **service_role** (server-side root only) — full engine/admin capability for CI, trusted backend jobs, bootstrap, and the **batch** path `submit_orders(account, instrument, jsonb[])`. Never ship it to browsers.
 - `9900_lockdown.sql` revokes EXECUTE on every engine function from public/anon/authenticated and re-grants only the whitelist, so internal helpers (`create_trade`, `update_price_level`, …) are unreachable by clients.
 
 ## Realtime feeds

@@ -55,7 +55,9 @@ Or fund directly with the service key:
 `process_transfer('DEPOSIT','MASTER', amount, currency, <user app_entity pub_id>, 'r','d', null)`.
 
 ## Back-office (admin)
-Open `http://127.0.0.1:4173/admin.html` and paste the **service_role** key (kept in sessionStorage, cleared on Lock). Console: wallet **approvals** queue (approve/reject), **reconciliation** dashboard (5 invariants), **accounts** (suspend/unsuspend), **fees**, **instrument risk**, **audit log** — all via the admin RPCs as `service_role`. Use only on a trusted machine.
+Open `http://127.0.0.1:4173/admin.html` and sign in with a Supabase Auth user plus the publishable/anon key. This test build is intentionally open: every signed-in user receives admin permissions. The RBAC tables (`admin_operator_role` / `admin_role_permission`) still exist so the hosted demo can be tightened later without rewriting the console.
+
+Keep the **service_role** key server-side only.
 
 ## Layout
 `index.html` (shell) · `styles.css` (phosphor design) · `app.js` (Supabase + wasm wiring) ·

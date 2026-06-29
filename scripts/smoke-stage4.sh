@@ -39,15 +39,14 @@ echo "after reject:     $(eur "$TOK")  (expect amount 300, reserved 0, available
 echo "== user sees own wallet history (RLS) =="
 uget "$TOK" "wallet_request?select=direction,currency,amount,status&order=created_at" ; echo
 
-echo "== a normal user cannot approve (admin-only); test on a FRESH pending request =="
+echo "== test-open RBAC: signed-in users can approve during demo =="
 FRESH=$(urpc "$TOK" request_deposit '{"currency_param":"EUR","amount_param":1}' | tr -d '"')
-DENY=$(urpc "$TOK" approve_wallet_request "{\"request_pub_param\":\"$FRESH\"}")
-echo "$DENY"
-arpc reject_wallet_request "{\"request_pub_param\":\"$FRESH\"}" >/dev/null  # clean up
+OPEN_APPROVE=$(urpc "$TOK" approve_wallet_request "{\"request_pub_param\":\"$FRESH\"}")
+echo "$OPEN_APPROVE"
 
 FINAL=$(eur "$TOK")
-OK_BAL=$(echo "$FINAL" | jq -e '(.amount|tonumber)==300 and (.amount_reserved|tonumber)==0 and (.available|tonumber)==300' >/dev/null && echo y || echo n)
-OK_DENY=$(echo "$DENY" | jq -e '.code=="42501"' >/dev/null && echo y || echo n)
-[ "$OK_BAL" = y ] && [ "$OK_DENY" = y ] \
-  && echo "PASS: wallet ledger + reservations correct; admin-only enforced" \
-  || { echo "FAIL: balance_ok=$OK_BAL deny_ok=$OK_DENY final=$FINAL deny=$DENY"; exit 1; }
+OK_BAL=$(echo "$FINAL" | jq -e '(.amount|tonumber)==301 and (.amount_reserved|tonumber)==0 and (.available|tonumber)==301' >/dev/null && echo y || echo n)
+OK_OPEN=$(echo "$OPEN_APPROVE" | jq -e 'type=="string" and length>0' >/dev/null && echo y || echo n)
+[ "$OK_BAL" = y ] && [ "$OK_OPEN" = y ] \
+  && echo "PASS: wallet ledger + reservations correct; test-open admin enforced" \
+  || { echo "FAIL: balance_ok=$OK_BAL open_ok=$OK_OPEN final=$FINAL approve=$OPEN_APPROVE"; exit 1; }

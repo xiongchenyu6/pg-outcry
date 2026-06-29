@@ -51,8 +51,8 @@
 | `scripts/smoke-realtime.mjs` | 断言一笔成交通过 websocket 广播 |
 | `scripts/smoke-stage2.sh` | 咨询锁下单 + 读 API（部分成交、结算、冻结）；需要 `SERVICE` |
 | `scripts/smoke-marketdata.mjs` | 断言 L2 `price_level` 更新通过 realtime 推送 |
-| `scripts/smoke-stage3.sh` | GoTrue 注册 → 自动建账户、JWT 交易、RLS 隔离、仅管理员的权限强制 |
-| `scripts/smoke-stage4.sh` | 钱包充值/提现/拒绝账本 + 资金冻结 + 仅管理员 |
+| `scripts/smoke-stage3.sh` | GoTrue 注册 → 自动建账户、JWT 交易、RLS 隔离、API 白名单强制 |
+| `scripts/smoke-stage4.sh` | 钱包充值/提现/拒绝账本 + 资金冻结 + 测试开放后台权限 |
 | `scripts/smoke-stage5.sh` | 风控（价格带/限额）+ 后台（停用/费率/风控/审计） |
 | `scripts/smoke-stage6.mjs` | 认证后的私有实时推送流（自己的订单/成交/钱包，无泄漏） |
 | `examples/private-feed.mjs` | 可直接复制粘贴的私有推送流前端客户端 |
@@ -95,8 +95,9 @@ node scripts/smoke-marketdata.mjs
 
 - **anon** —— 仅公开行情（通过表 SELECT 访问 `price_level`、`trade`、`instrument`、`currency`）。无 RPC。
 - **authenticated**（用户 JWT）—— 自作用域 API：`place_order`、`cancel_order`、`request_deposit`、`request_withdrawal`、`current_app_entity_*`。RLS 将所有读取限制在调用者自身实体范围内。
-- **service_role**（后台）—— 完整引擎 + 管理 RPC（`process_transfer`、`approve_wallet_request`……）；绕过 RLS。
-- `9900_lockdown.sql` 从 public/anon/authenticated 收回每个引擎函数的 EXECUTE 权限，并仅重新授予白名单，因此内部辅助函数（`create_trade`、`update_price_level`……）对客户端不可达。它最后运行，因此也覆盖后续迁移新增的函数。
+- **authenticated operator**（用户 JWT）—— 当前托管测试版默认给每个已登录用户完整后台权限。`admin_operator_role` / `admin_role_permission` 保留用于后续收紧审批、账户、市场/风控、衍生品、安全与审计权限。
+- **service_role** —— 仅服务端 root，用于 CI、可信任务、首次授权和原始引擎操作；浏览器后台不再需要它。
+- `9900_lockdown.sql` 从 public/anon/authenticated 收回每个引擎函数的 EXECUTE 权限，并仅重新授予白名单，因此内部辅助函数（`create_trade`、`update_price_level`……）对客户端不可达。后续迁移会对自己新增的 RPC 显式 revoke/grant。
 
 ## 实时推送流
 
