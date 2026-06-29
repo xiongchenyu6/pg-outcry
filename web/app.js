@@ -732,77 +732,16 @@ async function renderWithdraw(body) {
   };
 }
 
-// ---- Deposits: coin → network → in-DB address/memo + injected-wallet send (testnet) ----
-const SOLANA_RPC = "https://api.devnet.solana.com";
-// Only combos the in-DB watcher actually credits are offered. kind drives the wallet send.
+// ---- Deposits: coin → network → in-DB-derived address/memo (CEX style: send from any wallet) ----
+// Only combos the in-DB watcher actually credits are offered.
 const DEPOSIT_ASSETS = [
-  { coin: "USDT", chains: [{ chain: "tron-nile", net: "TRC-20 · Nile", kind: "trc20", contract: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", decimals: 6 }] },
-  { coin: "USDC", chains: [{ chain: "solana-testnet", net: "SPL · devnet", kind: "spl", contract: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", decimals: 6 }] },
-  { coin: "ETH",  chains: [{ chain: "ethereum-sepolia", net: "Sepolia", kind: "native", decimals: 18 }] },
-  { coin: "TRX",  chains: [{ chain: "tron-nile", net: "Nile", kind: "native", decimals: 6 }] },
-  { coin: "SOL",  chains: [{ chain: "solana-testnet", net: "devnet", kind: "native", decimals: 9 }] },
+  { coin: "USDT", chains: [{ chain: "tron-nile", net: "TRC-20 · Nile" }] },
+  { coin: "USDC", chains: [{ chain: "solana-testnet", net: "SPL · devnet" }] },
+  { coin: "ETH",  chains: [{ chain: "ethereum-sepolia", net: "Sepolia" }] },
+  { coin: "TRX",  chains: [{ chain: "tron-nile", net: "Nile" }] },
+  { coin: "SOL",  chains: [{ chain: "solana-testnet", net: "devnet" }] },
 ];
 let depCoin = null, depNet = null, depInfo = null;   // selection + resolved {address,memo,mode}
-
-async function sendDeposit(opt, toAddr, amount, memo) {
-  const raw = Math.round(amount * 10 ** opt.decimals);
-  if (opt.kind === "native" && opt.chain === "ethereum-sepolia") {
-    if (!window.ethereum) return toast("No EVM wallet (MetaMask) detected", "err");
-    const [from] = await window.ethereum.request({ method: "eth_requestAccounts" });
-    try { await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0xaa36a7" }] }); } catch {}
-    const txh = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from, to: toAddr, value: "0x" + BigInt(raw).toString(16) }] });
-    return toast(`Sent ${amount} ETH · ${txh.slice(0, 12)}…`);
-  }
-  if (opt.kind === "erc20") {
-    if (!window.ethereum) return toast("No EVM wallet detected", "err");
-    const [from] = await window.ethereum.request({ method: "eth_requestAccounts" });
-    try { await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0xaa36a7" }] }); } catch {}
-    const data = "0xa9059cbb" + toAddr.replace(/^0x/, "").toLowerCase().padStart(64, "0") + BigInt(raw).toString(16).padStart(64, "0");
-    const txh = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from, to: opt.contract, data }] });
-    return toast(`Sent ${amount} ${depCoin} · ${txh.slice(0, 12)}…`);
-  }
-  if (opt.kind === "native" && opt.chain === "tron-nile") {
-    if (!window.tronLink) return toast("No TronLink detected", "err");
-    await window.tronLink.request({ method: "tron_requestAccounts" });
-    const tw = window.tronWeb; if (!tw?.defaultAddress?.base58) return toast("Unlock TronLink first", "err");
-    let tx = await tw.transactionBuilder.sendTrx(toAddr, raw, tw.defaultAddress.base58);
-    if (memo) tx = await tw.transactionBuilder.addUpdateData(tx, memo, "utf8");
-    const res = await tw.trx.sendRawTransaction(await tw.trx.sign(tx));
-    return toast(`Sent ${amount} TRX (memo ${memo}) · ${(res.txid || "").slice(0, 12)}…`);
-  }
-  if (opt.kind === "trc20") {
-    if (!window.tronLink) return toast("No TronLink detected", "err");
-    await window.tronLink.request({ method: "tron_requestAccounts" });
-    const tw = window.tronWeb; if (!tw?.defaultAddress?.base58) return toast("Unlock TronLink first", "err");
-    const built = await tw.transactionBuilder.triggerSmartContract(opt.contract, "transfer(address,uint256)", { feeLimit: 100_000_000 },
-      [{ type: "address", value: toAddr }, { type: "uint256", value: raw }], tw.defaultAddress.base58);
-    let tx = built.transaction;
-    if (memo) tx = await tw.transactionBuilder.addUpdateData(tx, memo, "utf8");
-    const res = await tw.trx.sendRawTransaction(await tw.trx.sign(tx));
-    return toast(`Sent ${amount} USDT (memo ${memo}) · ${(res.txid || "").slice(0, 12)}…`);
-  }
-  // Solana native + SPL via Phantom
-  const p = window.solana; if (!p?.isPhantom) return toast("No Phantom wallet detected", "err");
-  await p.connect();
-  const web3 = await import("https://esm.sh/@solana/web3.js@1");
-  const conn = new web3.Connection(SOLANA_RPC, "confirmed");
-  const tx = new web3.Transaction();
-  if (opt.kind === "spl") {
-    const spl = await import("https://esm.sh/@solana/spl-token@0.4?deps=@solana/web3.js@1");
-    const mint = new web3.PublicKey(opt.contract), dest = new web3.PublicKey(toAddr);
-    const fromAta = spl.getAssociatedTokenAddressSync(mint, p.publicKey, true);
-    const toAta = spl.getAssociatedTokenAddressSync(mint, dest, true);
-    tx.add(spl.createAssociatedTokenAccountIdempotentInstruction(p.publicKey, toAta, dest, mint));
-    tx.add(spl.createTransferCheckedInstruction(fromAta, mint, toAta, p.publicKey, raw, opt.decimals));
-  } else {
-    tx.add(web3.SystemProgram.transfer({ fromPubkey: p.publicKey, toPubkey: new web3.PublicKey(toAddr), lamports: raw }));
-  }
-  if (memo) tx.add(new web3.TransactionInstruction({ keys: [], programId: new web3.PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"), data: new TextEncoder().encode(memo) }));
-  tx.feePayer = p.publicKey;
-  tx.recentBlockhash = (await conn.getLatestBlockhash()).blockhash;
-  const { signature } = await p.signAndSendTransaction(tx);
-  toast(`Sent ${amount} ${depCoin}${memo ? " (memo " + memo + ")" : ""} · ${signature.slice(0, 12)}…`);
-}
 
 async function renderDeposits(body) {
   const asset = DEPOSIT_ASSETS.find((a) => a.coin === depCoin);
@@ -811,13 +750,11 @@ async function renderDeposits(body) {
   const { data: deps } = await sb.from("my_chain_deposits")
     .select("chain,txid,currency,amount,credited_at,created_at").order("created_at", { ascending: false }).limit(30);
 
-  const detail = (asset && opt && depInfo) ? `<div class="acct-sec"><h4>3 · Send ${depCoin} on ${opt.net}</h4>
+  const detail = (asset && opt && depInfo) ? `<div class="acct-sec"><h4>3 · Your ${depCoin} deposit address · ${opt.net}</h4>
       <div class="acct-row"><span class="label">ADDRESS</span><input class="grow mono-num" readonly value="${escH(depInfo.address)}"/><button class="btn" data-copy="${escH(depInfo.address)}">Copy</button></div>
       ${depInfo.memo ? `<div class="acct-row"><span class="label">MEMO / TAG</span><input class="grow mono-num" readonly value="${escH(depInfo.memo)}"/><button class="btn" data-copy="${escH(depInfo.memo)}">Copy</button></div>
-        <div class="empty">⚠ The memo is required to credit your account. The send button below adds it automatically; external wallets must include it.</div>` : ""}
-      <div class="acct-row"><input id="depAmt" type="number" step="0.0001" placeholder="amount ${depCoin}" style="max-width:160px"/>
-        <button class="btn" id="depSend">Connect wallet &amp; send</button></div>
-      <div class="empty">Keys & address are derived inside Postgres; a pure-SQL watcher credits it within ~30s. Testnet only.</div></div>` : "";
+        <div class="empty">⚠ You <b>must</b> include this memo when sending, or the deposit can't be credited to you.</div>` : ""}
+      <div class="empty">Send <b>${depCoin}</b> on <b>${opt.net}</b> only to this address, from any wallet or exchange. A pure-SQL watcher credits it to your balance within ~30s. Sending a different coin or network will be lost. Testnet only.</div></div>` : "";
 
   body.innerHTML = `<div class="acct">
     <div class="acct-sec"><h4>1 · Select coin</h4>
@@ -834,23 +771,13 @@ async function renderDeposits(body) {
   </div>`;
 
   body.querySelectorAll("[data-coin]").forEach((b) => b.onclick = () => { depCoin = b.dataset.coin; depNet = null; depInfo = null; renderDeposits(body); });
-  body.querySelectorAll("[data-net]").forEach((b) => b.onclick = async () => {
-    depNet = b.dataset.net; depInfo = null; renderDeposits(body);
-  });
+  body.querySelectorAll("[data-net]").forEach((b) => b.onclick = () => { depNet = b.dataset.net; depInfo = null; renderDeposits(body); });
   // resolve the deposit address once a coin+network are chosen
   if (asset && opt && !depInfo) {
     const { data, error } = await sb.rpc("my_deposit_address", { chain_param: opt.chain });
     if (!error) { depInfo = data; renderDeposits(body); return; }
   }
   body.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => { navigator.clipboard?.writeText(b.dataset.copy); toast("Copied"); });
-  const sb2 = el("depSend");
-  if (sb2) sb2.onclick = async () => {
-    const amt = +el("depAmt").value;
-    if (!amt || amt <= 0) return toast("enter an amount", "err");
-    sb2.disabled = true;
-    try { await sendDeposit(opt, depInfo.address, amt, depInfo.memo); } catch (e) { toast(e?.message?.slice(0, 90) || "wallet error", "err"); }
-    sb2.disabled = false;
-  };
 }
 
 // ---- Staking (reward-per-token, pgmq unbonding) ----
