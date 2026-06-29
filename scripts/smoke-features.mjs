@@ -61,9 +61,7 @@ ok(Number((await svc("pay_referral_earnings", { entity_pub: A.pub, currency_para
 console.log("── Withdrawal whitelist + limits ──");
 const W = await signup("W"); await fund(W.pub, "EUR", 100000);
 await rpc(W.token, "add_withdrawal_address", { currency_param: "EUR", address_param: "IBAN-OK", label_param: "bank" });
-ok((await rpc(W.token, "request_withdrawal_to", { currency_param: "EUR", amount_param: 100, to_address_param: "IBAN-OK" })).status >= 400, "blocked during cooling");
-execSync(`psql "${PGURL}" -tAqc "update withdrawal_address set active_at=now()-interval '1 min' where address='IBAN-OK';"`);
-ok((await rpc(W.token, "request_withdrawal_to", { currency_param: "EUR", amount_param: 100, to_address_param: "IBAN-OK" })).status < 300, "succeeds after cooling");
+ok((await rpc(W.token, "request_withdrawal_to", { currency_param: "EUR", amount_param: 100, to_address_param: "IBAN-OK" })).status < 300, "whitelisted address usable immediately (no cooling)");
 ok((await rpc(W.token, "request_withdrawal_to", { currency_param: "EUR", amount_param: 999999, to_address_param: "IBAN-OK" })).status >= 400, "over-limit blocked");
 ok((await rpc(W.token, "request_withdrawal_to", { currency_param: "EUR", amount_param: 100, to_address_param: "NOPE" })).status >= 400, "non-whitelisted blocked");
 
