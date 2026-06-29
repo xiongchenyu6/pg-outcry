@@ -60,6 +60,9 @@ jobs:
       - name: Apply migrations
         run: bash scripts/reset-db.sh
 
+      - name: RLS invariant (security_invoker views ⇒ base tables readable)
+        run: bash scripts/check-rls-policies.sh
+
       - name: Export keys
         run: |
           echo "ANON=$(supabase status -o json | jq -r .ANON_KEY)" >> $GITHUB_ENV
