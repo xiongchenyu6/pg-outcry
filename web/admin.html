@@ -28,95 +28,142 @@
 </div>
 
 <div id="app">
-  <header>
-    <span class="brand">OUTCRY<span style="color:var(--amber)">/ADMIN</span></span>
+  <header class="admin-top">
+    <span class="brand">OUTCRY<span>/ADMIN</span></span>
+    <div class="admin-env">
+      <span class="label">Operator plane</span>
+      <span class="who">recon <b id="reconBadge">-</b></span>
+    </div>
     <span class="spacer"></span>
-    <span class="who">recon <b id="reconBadge">—</b></span>
-    <button class="swap" id="refresh">↻ Refresh</button>
+    <button class="swap" id="refresh">Refresh</button>
     <button class="swap" id="lock">Lock</button>
   </header>
 
-  <div class="adash">
-    <!-- stats -->
-    <div class="stats" id="stats"></div>
+  <div class="ops-shell">
+    <aside class="ops-rail" aria-label="Back-office modules">
+      <div class="rail-brand">
+        <span class="label">Workspace</span>
+        <strong>Exchange Control</strong>
+      </div>
+      <nav class="ops-nav" id="opsNav">
+        <button class="on" data-admin-section="overview">Overview</button>
+        <button data-admin-section="treasury">Treasury</button>
+        <button data-admin-section="accounts">Accounts</button>
+        <button data-admin-section="markets">Markets</button>
+        <button data-admin-section="security">Security</button>
+        <button data-admin-section="audit">Audit</button>
+      </nav>
+      <div class="rail-status">
+        <span class="label">Controls</span>
+        <div>service_role gated</div>
+        <div>append-only audit</div>
+        <div>RLS bypass operator</div>
+      </div>
+    </aside>
 
-    <!-- approvals -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">Wallet Approvals · pending</span><span class="label" id="apprCount"></span></div>
-      <div class="panel__b" id="approvals"></div>
-    </section>
-
-    <!-- withdrawal signer queue -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">Withdrawal Queue · signer</span><span class="label" id="wdqCount"></span></div>
-      <div class="panel__b" id="withdrawQueue"></div>
-    </section>
-
-    <!-- reconciliation -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">Reconciliation · invariants</span><span class="label" id="reconWhen"></span></div>
-      <div class="panel__b" id="recon"></div>
-    </section>
-
-    <!-- accounts -->
-    <section class="panel span2">
-      <div class="panel__h"><span class="label">Accounts</span><span class="label" id="acctCount"></span></div>
-      <div class="panel__b" id="accounts"></div>
-    </section>
-
-    <!-- fees -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">Fees</span></div>
-      <div class="panel__b">
-        <div id="fees"></div>
-        <div class="adm-form">
-          <div class="row3"><input id="feeType" placeholder="TAKER_FEE" /><input id="feeCur" placeholder="EUR" /><input id="feePct" type="number" step="0.01" placeholder="% e.g. 0.1" /></div>
-          <button class="btn-sm" id="setFee">Set fee</button>
+    <main class="ops-work">
+      <div class="ops-head">
+        <div>
+          <span class="label" id="opsEyebrow">Operations overview</span>
+          <h1 id="opsTitle">Control room</h1>
+          <p id="opsCopy">Live exchange health, treasury queues, account controls, product risk, security oversight, and audit evidence.</p>
+        </div>
+        <div class="ops-clock">
+          <span class="label">Updated</span>
+          <b id="opsUpdated">-</b>
         </div>
       </div>
-    </section>
 
-    <!-- risk -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">Instrument Risk</span></div>
-      <div class="panel__b">
-        <div id="risk"></div>
-        <div class="adm-form">
-          <div class="row3"><input id="rInst" placeholder="BTC_EUR" /><input id="rAmt" type="number" placeholder="max amt" /><input id="rNot" type="number" placeholder="max notional" /></div>
-          <div class="row3"><input id="rBand" type="number" step="0.1" placeholder="band %" /><button class="btn-sm" id="setRisk" style="grid-column:span 2">Set risk</button></div>
+      <div class="stats" id="stats"></div>
+
+      <div class="adash">
+        <div class="ops-section on" data-section="overview">
+          <section class="panel">
+            <div class="panel__h"><span class="label">Reconciliation · invariants</span><span class="label" id="reconWhen"></span></div>
+            <div class="panel__b" id="recon"></div>
+          </section>
+          <section class="panel">
+            <div class="panel__h"><span class="label">Wallet Approvals · pending</span><span class="label" id="apprCount"></span></div>
+            <div class="panel__b" id="approvals"></div>
+          </section>
+          <section class="panel">
+            <div class="panel__h"><span class="label">Withdrawal Queue · signer</span><span class="label" id="wdqCount"></span></div>
+            <div class="panel__b" id="withdrawQueue"></div>
+          </section>
+          <section class="panel">
+            <div class="panel__h"><span class="label">Referral · unpaid earnings</span><span class="label" id="refCount"></span></div>
+            <div class="panel__b" id="referrals"></div>
+          </section>
+        </div>
+
+        <div class="ops-section" data-section="treasury">
+          <section class="panel">
+            <div class="panel__h"><span class="label">Wallet Approvals · cash operations</span><span class="label" id="apprCount2"></span></div>
+            <div class="panel__b" id="approvalsMirror"></div>
+          </section>
+          <section class="panel">
+            <div class="panel__h"><span class="label">Withdrawal Queue · custody signer</span><span class="label" id="wdqCount2"></span></div>
+            <div class="panel__b" id="withdrawQueueMirror"></div>
+          </section>
+          <section class="panel span2">
+            <div class="panel__h"><span class="label">Chain Deposits · network operations</span><span class="label" id="chainCount"></span></div>
+            <div class="panel__b" id="chainOps"></div>
+          </section>
+        </div>
+
+        <div class="ops-section" data-section="accounts">
+          <section class="panel span2">
+            <div class="panel__h"><span class="label">Accounts · client controls</span><span class="label" id="acctCount"></span></div>
+            <div class="panel__b" id="accounts"></div>
+          </section>
+          <section class="panel">
+            <div class="panel__h"><span class="label">Referral · payout desk</span><span class="label" id="refCount2"></span></div>
+            <div class="panel__b" id="referralsMirror"></div>
+          </section>
+        </div>
+
+        <div class="ops-section" data-section="markets">
+          <section class="panel">
+            <div class="panel__h"><span class="label">Fees · revenue rules</span></div>
+            <div class="panel__b">
+              <div id="fees"></div>
+              <div class="adm-form">
+                <div class="row3"><input id="feeType" placeholder="TAKER_FEE" /><input id="feeCur" placeholder="EUR" /><input id="feePct" type="number" step="0.01" placeholder="% e.g. 0.1" /></div>
+                <button class="btn-sm" id="setFee">Set fee</button>
+              </div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel__h"><span class="label">Instrument Risk · pre-trade limits</span></div>
+            <div class="panel__b">
+              <div id="risk"></div>
+              <div class="adm-form">
+                <div class="row3"><input id="rInst" placeholder="BTC_EUR" /><input id="rAmt" type="number" placeholder="max amt" /><input id="rNot" type="number" placeholder="max notional" /></div>
+                <div class="row3"><input id="rBand" type="number" step="0.1" placeholder="band %" /><button class="btn-sm" id="setRisk" style="grid-column:span 2">Set risk</button></div>
+              </div>
+            </div>
+          </section>
+          <section class="panel span2 tall">
+            <div class="panel__h"><span class="label">Derivatives &amp; Staking · product controls</span><span class="label" id="derivWhen"></span></div>
+            <div class="panel__b" id="deriv"></div>
+          </section>
+        </div>
+
+        <div class="ops-section" data-section="security">
+          <section class="panel span2">
+            <div class="panel__h"><span class="label">API Keys · automated access</span><span class="label" id="keyCount"></span></div>
+            <div class="panel__b" id="apiKeys"></div>
+          </section>
+        </div>
+
+        <div class="ops-section" data-section="audit">
+          <section class="panel span2 tall">
+            <div class="panel__h"><span class="label">Admin Audit Log · immutable evidence</span><span class="label" id="auditCount"></span></div>
+            <div class="panel__b" id="audit"></div>
+          </section>
         </div>
       </div>
-    </section>
-
-    <!-- referral payouts -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">Referral · unpaid earnings</span><span class="label" id="refCount"></span></div>
-      <div class="panel__b" id="referrals"></div>
-    </section>
-
-    <!-- chain deposits -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">Chain Deposits</span><span class="label" id="chainCount"></span></div>
-      <div class="panel__b" id="chainOps"></div>
-    </section>
-
-    <!-- API keys -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">API Keys · bots</span><span class="label" id="keyCount"></span></div>
-      <div class="panel__b" id="apiKeys"></div>
-    </section>
-
-    <!-- derivatives & staking -->
-    <section class="panel">
-      <div class="panel__h"><span class="label">Derivatives &amp; Staking</span><span class="label" id="derivWhen"></span></div>
-      <div class="panel__b" id="deriv"></div>
-    </section>
-
-    <!-- audit -->
-    <section class="panel span2">
-      <div class="panel__h"><span class="label">Admin Audit Log</span><span class="label" id="auditCount"></span></div>
-      <div class="panel__b" id="audit"></div>
-    </section>
+    </main>
   </div>
 </div>
 

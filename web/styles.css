@@ -59,10 +59,9 @@ body::after {
 .modal[hidden] { display: none; }
 .modal__box { width: min(680px, 96vw); max-height: 90vh; display: flex; flex-direction: column;
   background: var(--bg-panel); border: 1px solid var(--line); box-shadow: 0 24px 70px rgba(0,0,0,.65); }
+.modal__box--wide { width: min(980px, 96vw); }
 .modal__h { display: flex; align-items: center; justify-content: space-between;
   gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-#acctTabs { flex-wrap: wrap; }
-#acctTabs button { padding: 2px 4px; }
 .modal__b { padding: 14px; overflow: auto; min-height: 0; }
 .acct-sec { margin-bottom: 18px; }
 .acct-sec h4 { font-family: var(--cond); text-transform: uppercase; letter-spacing: .16em;
@@ -91,7 +90,7 @@ body::after {
 .x-btn { color: var(--coral); border: 1px solid rgba(255,93,108,.4); background: transparent;
   padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: var(--mono); }
 .x-btn:hover { background: rgba(255,93,108,.12); }
-@media (max-width: 860px) { header #acctBtn { order: 6; } }
+@media (max-width: 860px) { header #walletBtn, header #devBtn, header #acctBtn { order: 6; } }
 
 /* always-visible available-balance bar in the order-entry panel */
 .balbar { border: 1px solid var(--line); background: rgba(78,247,168,.03); padding: 8px 10px; margin-bottom: 10px; }
@@ -145,6 +144,12 @@ body::after {
 header { display: flex; align-items: center; gap: 18px; padding: 0 16px; border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, #0a0f11, #070a0c); }
 header .brand { font-family: var(--cond); font-weight: 700; letter-spacing: .34em; color: var(--phos); text-shadow: var(--glow); }
+.product-nav { display: flex; align-items: center; gap: 2px; height: 100%; padding-left: 4px; border-left: 1px solid var(--line); }
+.product-nav button { height: 100%; background: transparent; border: 0; border-bottom: 2px solid transparent;
+  color: var(--ink-dim); font-family: var(--cond); text-transform: uppercase; letter-spacing: .12em;
+  font-size: 11px; padding: 0 10px; cursor: pointer; }
+.product-nav button:hover { color: var(--ink); }
+.product-nav button.on { color: var(--phos); border-bottom-color: var(--phos); background: rgba(78,247,168,.045); }
 .sym-pick { display: flex; gap: 2px; }
 .sym-pick button { font-family: var(--mono); background: transparent; border: 1px solid transparent; color: var(--ink-dim);
   padding: 4px 11px; cursor: pointer; font-size: 12px; letter-spacing: .05em; }
@@ -158,6 +163,10 @@ header .spacer { flex: 1; }
 .conn .dot.off { background: var(--coral); box-shadow: 0 0 8px rgba(255,93,108,.5); }
 .who { font-size: 11px; color: var(--ink-dim); }
 .who b { color: var(--ink); font-weight: 500; }
+.top-action { background: var(--bg-raised); border: 1px solid var(--line); color: var(--ink-dim);
+  font-family: var(--cond); text-transform: uppercase; letter-spacing: .1em; font-size: 10px;
+  cursor: pointer; padding: 6px 10px; }
+.top-action:hover { color: var(--phos); border-color: var(--phos-dim); }
 
 main { display: grid; grid-template-columns: 300px 1fr 320px; grid-template-rows: 1fr 200px; gap: 1px;
   background: var(--line); overflow: hidden; }
@@ -224,6 +233,10 @@ main { display: grid; grid-template-columns: 300px 1fr 320px; grid-template-rows
   font-size: 13px; border: none; cursor: pointer; }
 .submit.buy { background: var(--phos); color: #04150d; } .submit.sell { background: var(--coral); color: #1a0508; }
 .submit:disabled { opacity: .4; cursor: not-allowed; }
+.ticket-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 12px; border: 1px solid var(--line); background: var(--line); }
+.link-action { background: var(--bg-raised); border: 0; color: var(--ink-dim); cursor: pointer;
+  font-family: var(--cond); text-transform: uppercase; letter-spacing: .1em; font-size: 10px; padding: 8px 6px; }
+.link-action:hover { color: var(--phos); background: rgba(78,247,168,.06); }
 
 /* balances + open orders tables */
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -243,26 +256,6 @@ tr:hover td { background: rgba(255,255,255,.02); }
   text-transform: uppercase; font-size: 10px; cursor: pointer; padding: 2px 8px; }
 .subtabs button.on { color: var(--phos); }
 .empty { color: var(--ink-faint); font-size: 11px; padding: 16px 12px; text-align: center; }
-
-/* wallet mini-form */
-.wallet { padding: 12px; display: grid; gap: 8px; border-top: 1px solid var(--line); }
-.wallet .row2 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
-.wallet select, .wallet input { background:#05080a; border:1px solid var(--line); color:var(--ink); font-family:var(--mono); padding:7px; font-size:12px; }
-.wallet button { background: var(--bg-raised); border: 1px solid var(--line); color: var(--ink-dim); cursor: pointer; font-family: var(--cond);
-  text-transform: uppercase; letter-spacing:.1em; font-size:10px; padding: 7px; }
-.wallet button:hover { color: var(--phos); border-color: var(--phos-dim); }
-
-.feature-rail { padding: 12px; display: grid; gap: 7px; border-top: 1px solid var(--line); }
-.feature-rail__h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
-.feature-card { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  text-align: left; background: rgba(78,247,168,.025); border: 1px solid var(--line); color: var(--ink);
-  padding: 9px 10px; cursor: pointer; font-family: var(--mono); }
-.feature-card:hover { border-color: var(--phos-dim); background: rgba(78,247,168,.06); }
-.feature-card b { display: block; font-family: var(--cond); text-transform: uppercase; letter-spacing: .12em;
-  font-size: 11px; color: var(--phos); font-weight: 600; }
-.feature-card small { display: block; margin-top: 2px; color: var(--ink-dim); font-size: 10px; line-height: 1.35; }
-.feature-card em { flex: none; font-style: normal; font-family: var(--cond); text-transform: uppercase;
-  letter-spacing: .1em; font-size: 9px; color: var(--amber); border-left: 1px solid var(--line); padding-left: 9px; }
 
 .toast-wrap { position: fixed; bottom: 16px; right: 16px; z-index: 90; display: grid; gap: 8px; }
 .toast { background: var(--bg-raised); border: 1px solid var(--line); border-left: 2px solid var(--phos);
@@ -365,6 +358,8 @@ tr:hover td { background: rgba(255,255,255,.02); }
   .who { display: none; }
   .ticker .px { font-size: 16px; }
   .conn { order: 4; }
+  .product-nav { order: 2; height: 34px; flex: 1; overflow-x: auto; border-left: 0; padding-left: 0; }
+  .product-nav button { height: 34px; padding: 0 8px; }
   .sym-pick { order: 5; width: 100%; overflow-x: auto; }
 
   /* collapse the 3-column trading grid into one scrolling column */
@@ -392,7 +387,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
   #blotBody table { min-width: 460px; }
 
   /* comfortable tap targets */
-  .submit, #wGo, .btn--go, .seg button, #otype button, .tf button, .ma-t { min-height: 38px; }
+  .submit, .link-action, .btn--go, .seg button, #otype button, .tf button, .ma-t { min-height: 38px; }
   .draw-tools { right: 6px; }
 }
 

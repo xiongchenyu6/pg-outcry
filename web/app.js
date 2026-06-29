@@ -532,15 +532,6 @@ el("place").onclick = async () => {
   else { toast(`${side} ${baseAmt} ${SYM} ${otype.toLowerCase()} placed`); pollBook(); refreshBlotter(); }
 };
 
-// ---------- wallet ----------
-el("wGo").onclick = async () => {
-  const dir = el("wDir").value, cur = el("wCur").value, amt = +el("wAmt").value;
-  const fn = dir === "DEPOSIT" ? "request_deposit" : "request_withdrawal";
-  const { error } = await sb.rpc(fn, { currency_param: cur, amount_param: amt });
-  if (error) toast(error.message.replace(/_/g, " "), "err");
-  else { toast(`${dir} request: ${amt} ${cur} (pending admin)`, "warn"); refreshBlotter(); }
-};
-
 // ============================================================ PRIVATE FEED
 function subscribePrivate() {
   if (privChan) sb.removeChannel(privChan);
@@ -609,37 +600,83 @@ async function refreshBlotter() {
   }
 }
 
-// ============================================================ ACCOUNT (API keys · referral · withdraw)
+// ============================================================ PRODUCT / WALLET / ACCOUNT WORKSPACES
 const escH = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-let acctTab = "keys", lastKeySecret = null;
-function openAccount(tab = acctTab) {
-  acctTab = tab;
-  el("acctModal").hidden = false;
-  document.querySelectorAll("#acctTabs button").forEach((x) => x.classList.toggle("on", x.dataset.atab === acctTab));
-  renderAcct();
+let productTab = "perp", walletTab = "dep", lastKeySecret = null;
+function setProductNav(tab) {
+  document.querySelectorAll("#productNav button").forEach((b) => b.classList.toggle("on", b.dataset.product === tab));
 }
-el("acctBtn").onclick = () => openAccount();
-el("acctClose").onclick = () => { el("acctModal").hidden = true; };
-el("acctModal").addEventListener("click", (e) => { if (e.target === el("acctModal")) el("acctModal").hidden = true; });
-document.querySelectorAll("#acctTabs button").forEach((b) => b.onclick = () => {
-  openAccount(b.dataset.atab);
+function openProduct(tab = productTab) {
+  productTab = tab;
+  setProductNav(tab);
+  el("productModal").hidden = false;
+  document.querySelectorAll("#productTabs button").forEach((b) => b.classList.toggle("on", b.dataset.ptab === productTab));
+  renderProduct();
+}
+function openWallet(tab = walletTab) {
+  walletTab = tab;
+  el("walletModal").hidden = false;
+  document.querySelectorAll("#walletTabs button").forEach((b) => b.classList.toggle("on", b.dataset.wtab === walletTab));
+  renderWallet();
+}
+function openDeveloper() {
+  el("devModal").hidden = false;
+  renderDeveloper();
+}
+function openAccount() {
+  el("acctModal").hidden = false;
+  renderAccount();
+}
+function closeModal(id) { el(id).hidden = true; }
+
+document.querySelectorAll("#productNav button").forEach((b) => b.onclick = () => {
+  if (b.dataset.product === "spot") { setProductNav("spot"); closeModal("productModal"); return; }
+  openProduct(b.dataset.product);
 });
-document.querySelectorAll("[data-open-account]").forEach((b) => {
-  b.onclick = () => openAccount(b.dataset.openAccount);
+document.querySelectorAll("#productTabs button").forEach((b) => b.onclick = () => openProduct(b.dataset.ptab));
+document.querySelectorAll("[data-product-jump]").forEach((b) => b.onclick = () => openProduct(b.dataset.productJump));
+document.querySelectorAll("#walletTabs button").forEach((b) => b.onclick = () => openWallet(b.dataset.wtab));
+document.querySelectorAll("[data-open-wallet]").forEach((b) => b.onclick = () => openWallet(b.dataset.openWallet));
+
+el("walletBtn").onclick = () => openWallet();
+el("devBtn").onclick = () => openDeveloper();
+el("acctBtn").onclick = () => openAccount();
+el("productClose").onclick = () => { closeModal("productModal"); setProductNav("spot"); };
+el("walletClose").onclick = () => closeModal("walletModal");
+el("devClose").onclick = () => closeModal("devModal");
+el("acctClose").onclick = () => { el("acctModal").hidden = true; };
+["productModal", "walletModal", "devModal", "acctModal"].forEach((id) => {
+  el(id).addEventListener("click", (e) => { if (e.target === el(id)) closeModal(id); });
 });
 
-async function renderAcct() {
-  const body = el("acctBody");
+async function renderProduct() {
+  const body = el("productBody");
   body.innerHTML = `<div class="acct"><div class="empty">Loading…</div></div>`;
   try {
-    if (acctTab === "keys") return await renderKeys(body);
-    if (acctTab === "ref") return await renderReferral(body);
-    if (acctTab === "wd") return await renderWithdraw(body);
-    if (acctTab === "dep") return await renderDeposits(body);
-    if (acctTab === "stake") return await renderStake(body);
-    if (acctTab === "margin") return await renderMargin(body);
-    if (acctTab === "perp") return await renderPerp(body);
+    if (productTab === "perp") return await renderPerp(body);
+    if (productTab === "margin") return await renderMargin(body);
+    if (productTab === "stake") return await renderStake(body);
   } catch (e) { body.innerHTML = `<div class="acct"><div class="empty">${escH(e.message || e)}</div></div>`; }
+}
+async function renderWallet() {
+  const body = el("walletBody");
+  body.innerHTML = `<div class="acct"><div class="empty">Loading…</div></div>`;
+  try {
+    if (walletTab === "dep") return await renderDeposits(body);
+    if (walletTab === "wd") return await renderWithdraw(body);
+  } catch (e) { body.innerHTML = `<div class="acct"><div class="empty">${escH(e.message || e)}</div></div>`; }
+}
+async function renderDeveloper() {
+  const body = el("devBody");
+  body.innerHTML = `<div class="acct"><div class="empty">Loading…</div></div>`;
+  try { return await renderKeys(body); }
+  catch (e) { body.innerHTML = `<div class="acct"><div class="empty">${escH(e.message || e)}</div></div>`; }
+}
+async function renderAccount() {
+  const body = el("acctBody");
+  body.innerHTML = `<div class="acct"><div class="empty">Loading…</div></div>`;
+  try { return await renderReferral(body); }
+  catch (e) { body.innerHTML = `<div class="acct"><div class="empty">${escH(e.message || e)}</div></div>`; }
 }
 
 async function renderKeys(body) {
@@ -666,7 +703,7 @@ async function renderKeys(body) {
   };
   body.querySelectorAll("[data-revoke]").forEach((b) => b.onclick = async () => {
     const { error } = await sb.rpc("revoke_api_key", { key_id_param: b.dataset.revoke });
-    if (error) toast(error.message, "err"); else { toast("Key revoked"); renderAcct(); }
+    if (error) toast(error.message, "err"); else { toast("Key revoked"); renderDeveloper(); }
   });
 }
 
@@ -687,7 +724,7 @@ async function renderReferral(body) {
   el("refCopy").onclick = () => { navigator.clipboard?.writeText(link); toast("Invite link copied"); };
   el("refSetBtn").onclick = async () => {
     const { error } = await sb.rpc("set_my_referrer", { code_param: el("refSet").value.trim() });
-    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Referrer set"); renderAcct(); }
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Referrer set"); renderAccount(); }
   };
 }
 
@@ -828,17 +865,17 @@ async function renderStake(body) {
   </div>`;
   el("stGo").onclick = async () => {
     const { error } = await sb.rpc("stake", { currency_param: el("stCur").value, amount_param: +el("stAmt").value });
-    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Staked"); renderAcct(); refreshBlotter(); }
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Staked"); renderProduct(); refreshBlotter(); }
   };
   body.querySelectorAll("[data-claim]").forEach((b) => b.onclick = async () => {
     const { error } = await sb.rpc("claim_stake_rewards", { currency_param: b.dataset.claim });
-    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Rewards claimed"); renderAcct(); refreshBlotter(); }
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Rewards claimed"); renderProduct(); refreshBlotter(); }
   });
   body.querySelectorAll("[data-unstake]").forEach((b) => b.onclick = async () => {
     const cur = b.dataset.unstake;
     const row = (mine || []).find((s) => s.currency === cur);
     const { error } = await sb.rpc("unstake", { currency_param: cur, amount_param: row ? +row.amount : 0 });
-    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Unstaking — principal returns after unbonding", "warn"); renderAcct(); }
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Unstaking — principal returns after unbonding", "warn"); renderProduct(); }
   });
 }
 
@@ -870,11 +907,11 @@ async function renderMargin(body) {
   </div>`;
   el("mgGo").onclick = async () => {
     const { error } = await sb.rpc("borrow", { currency_param: el("mgCur").value, amount_param: +el("mgAmt").value });
-    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Borrowed"); renderAcct(); refreshBlotter(); }
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Borrowed"); renderProduct(); refreshBlotter(); }
   };
   body.querySelectorAll("[data-repay]").forEach((b) => b.onclick = async () => {
     const { error } = await sb.rpc("repay", { currency_param: b.dataset.repay, amount_param: +b.dataset.debt });
-    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Repaid"); renderAcct(); refreshBlotter(); }
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Repaid"); renderProduct(); refreshBlotter(); }
   });
 }
 
@@ -910,11 +947,11 @@ async function renderPerp(body) {
     const sym = el("ppSym").value; if (!sym) return toast("no flat market to open", "err");
     const size = (+el("ppSide").value) * Math.abs(+el("ppSize").value);
     const { error } = await sb.rpc("open_perp", { symbol_param: sym, size_param: size, margin_param: +el("ppMargin").value });
-    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Position opened"); renderAcct(); refreshBlotter(); }
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast("Position opened"); renderProduct(); refreshBlotter(); }
   };
   body.querySelectorAll("[data-closeperp]").forEach((b) => b.onclick = async () => {
     const { data: r, error } = await sb.rpc("close_perp", { symbol_param: b.dataset.closeperp });
-    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast(`Closed · PnL ${fmt(r?.pnl, 2)} · payout ${fmt(r?.payout, 2)}`); renderAcct(); refreshBlotter(); }
+    if (error) toast(error.message.replace(/_/g, " "), "err"); else { toast(`Closed · PnL ${fmt(r?.pnl, 2)} · payout ${fmt(r?.payout, 2)}`); renderProduct(); refreshBlotter(); }
   });
 }
 

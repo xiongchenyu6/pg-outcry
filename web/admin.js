@@ -10,6 +10,38 @@ const rpc = async (fn, args) => { const { data, error } = await sb.rpc(fn, args)
 
 const _q = new URLSearchParams(location.search);
 const DEMO = _q.get("demo") === "1";
+const ADMIN_SECTIONS = {
+  overview: ["Operations overview", "Control room", "Live exchange health, treasury queues, account controls, product risk, security oversight, and audit evidence."],
+  treasury: ["Treasury operations", "Cash and custody", "Approve fiat-style wallet intents, run signer queues, configure chain assets, and inspect detected deposits."],
+  accounts: ["Client operations", "Accounts and payouts", "Review clients, suspend compromised accounts, restore cleared accounts, and settle referral liabilities."],
+  markets: ["Market operations", "Products and risk", "Manage fee schedules, instrument risk limits, derivatives markets, margin terms, and staking pools."],
+  security: ["Security operations", "Access oversight", "Review bot API access and revoke keys without entering the customer wallet surface."],
+  audit: ["Compliance operations", "Audit trail", "Inspect immutable admin actions for incident review, compliance sampling, and operator accountability."],
+};
+
+function setAdminSection(section = "overview") {
+  const next = ADMIN_SECTIONS[section] ? section : "overview";
+  const [eyebrow, title, copy] = ADMIN_SECTIONS[next];
+  el("opsEyebrow").textContent = eyebrow;
+  el("opsTitle").textContent = title;
+  el("opsCopy").textContent = copy;
+  document.querySelectorAll("[data-admin-section]").forEach((b) => b.classList.toggle("on", b.dataset.adminSection === next));
+  document.querySelectorAll("[data-section]").forEach((s) => s.classList.toggle("on", s.dataset.section === next));
+}
+
+function mirrorHtml(srcId, dstId) {
+  const src = el(srcId), dst = el(dstId);
+  if (src && dst) dst.innerHTML = src.innerHTML;
+}
+function mirrorText(srcId, dstId) {
+  const src = el(srcId), dst = el(dstId);
+  if (src && dst) dst.textContent = src.textContent;
+}
+
+el("opsNav").querySelectorAll("[data-admin-section]").forEach((b) => {
+  b.onclick = () => setAdminSection(b.dataset.adminSection);
+});
+setAdminSection("overview");
 
 // ---- gate ----
 el("api").value = sessionStorage.getItem("oc_admin_api") || el("api").value;
@@ -37,6 +69,7 @@ async function refreshAll() {
     loadReferrals(), loadChainOps(), loadApiKeys(), loadDeriv(), loadAudit(),
   ]);
   loadStats();
+  el("opsUpdated").textContent = new Date().toLocaleTimeString();
 }
 
 // ---- stats ----
@@ -75,8 +108,10 @@ async function loadApprovals() {
       <td class="${r.direction === "DEPOSIT" ? "up" : "down"}">${r.direction}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.amount)}</td>
       <td><div class="act"><button class="ok" data-appr="${r.pub_id}">approve</button><button class="no" data-rej="${r.pub_id}">reject</button></div></td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">No pending wallet requests</div>`;
-  el("approvals").querySelectorAll("[data-appr]").forEach((b) => b.onclick = async () => { await rpc("approve_wallet_request", { request_pub_param: b.dataset.appr }); toast("Approved"); refreshAll(); });
-  el("approvals").querySelectorAll("[data-rej]").forEach((b) => b.onclick = async () => { await rpc("reject_wallet_request", { request_pub_param: b.dataset.rej }); toast("Rejected", "warn"); refreshAll(); });
+  mirrorText("apprCount", "apprCount2");
+  mirrorHtml("approvals", "approvalsMirror");
+  document.querySelectorAll("[data-appr]").forEach((b) => b.onclick = async () => { await rpc("approve_wallet_request", { request_pub_param: b.dataset.appr }); toast("Approved"); refreshAll(); });
+  document.querySelectorAll("[data-rej]").forEach((b) => b.onclick = async () => { await rpc("reject_wallet_request", { request_pub_param: b.dataset.rej }); toast("Rejected", "warn"); refreshAll(); });
 }
 
 // ---- withdrawal signer queue ----
@@ -92,7 +127,7 @@ async function loadWithdrawQueue() {
   const open = rows.filter((r) => !r.confirmed_at).length;
   el("wdqCount").textContent = open ? `${open} open` : "clear";
   const stage = (r) => r.confirmed_at ? "confirmed" : r.broadcast_txid ? "broadcast" : r.signing_claimed_at ? "claimed" : "queued";
-  el("withdrawQueue").innerHTML = `<div class="adm-form"><button class="btn-sm" id="claimWithdrawal">Claim next to sign</button></div>` +
+  el("withdrawQueue").innerHTML = `<div class="adm-form"><button class="btn-sm" data-claim-withdrawal="1">Claim next to sign</button></div>` +
     (rows.length ? `<table><thead><tr><th>Request</th><th>Entity</th><th>Cur</th><th>Amt</th><th>To</th><th>Stage</th><th>Action</th></tr></thead><tbody>${
       rows.map((r) => `<tr><td class="mono-num" title="${escH(r.pub_id)}">${escH(r.pub_id.slice(0, 10))}</td><td>${escH((r.app_entity?.external_id || "—").slice(0, 14))}</td>
         <td>${escH(r.currency)}</td><td class="mono-num">${fmt(r.amount, 4)}</td><td class="mono-num" title="${escH(r.to_address)}">${escH((r.to_address || "").slice(0, 14))}</td>
@@ -100,18 +135,20 @@ async function loadWithdrawQueue() {
           ? `<div class="act"><button class="ok" data-confirm-wd="${escH(r.pub_id)}">confirm</button></div>`
           : `<div class="act"><input class="txid-mini" data-txid-for="${escH(r.pub_id)}" placeholder="txid"/><button class="ok" data-broadcast-wd="${escH(r.pub_id)}">broadcast</button></div>`}</td></tr>`).join("")}</tbody></table>`
       : `<div class="empty">No on-chain withdrawals waiting for signer status.</div>`);
-  el("claimWithdrawal").onclick = async () => {
+  mirrorText("wdqCount", "wdqCount2");
+  mirrorHtml("withdrawQueue", "withdrawQueueMirror");
+  document.querySelectorAll("[data-claim-withdrawal]").forEach((btn) => btn.onclick = async () => {
     const r = await rpc("next_withdrawal_to_sign", {});
     toast(r ? `Claimed ${r.pub_id?.slice(0, 10)} ${r.amount} ${r.currency}` : "No withdrawal to sign", r ? "warn" : "");
     refreshAll();
-  };
-  el("withdrawQueue").querySelectorAll("[data-broadcast-wd]").forEach((b) => b.onclick = async () => {
+  });
+  document.querySelectorAll("[data-broadcast-wd]").forEach((b) => b.onclick = async () => {
     const txid = b.parentElement.querySelector("[data-txid-for]")?.value.trim();
     if (!txid) return toast("txid required", "err");
     await rpc("mark_withdrawal_broadcast", { request_pub: b.dataset.broadcastWd, txid });
     toast("Withdrawal marked broadcast"); refreshAll();
   });
-  el("withdrawQueue").querySelectorAll("[data-confirm-wd]").forEach((b) => b.onclick = async () => {
+  document.querySelectorAll("[data-confirm-wd]").forEach((b) => b.onclick = async () => {
     await rpc("mark_withdrawal_confirmed", { request_pub: b.dataset.confirmWd });
     toast("Withdrawal confirmed"); refreshAll();
   });
@@ -181,7 +218,9 @@ async function loadReferrals() {
     rows.map((r) => `<tr><td title="${r.pub}">${(r.label || "—").slice(0, 18)}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.total, 4)}</td>
       <td><div class="act"><button class="ok" data-pay="${r.pub}" data-cur="${r.currency}">pay</button></div></td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">No unpaid referral earnings</div>`;
-  el("referrals").querySelectorAll("[data-pay]").forEach((b) => b.onclick = async () => {
+  mirrorText("refCount", "refCount2");
+  mirrorHtml("referrals", "referralsMirror");
+  document.querySelectorAll("[data-pay]").forEach((b) => b.onclick = async () => {
     await rpc("pay_referral_earnings", { entity_pub: b.dataset.pay, currency_param: b.dataset.cur });
     toast("Referral earnings paid"); refreshAll();
   });
@@ -392,11 +431,12 @@ async function refreshDemo() {
   let d;
   try { d = await rpc("demo_admin_overview"); } catch { return; }
   const recon = d.recon || [], appr = d.approvals || [], accts = d.accounts || [],
-        fees = d.fees || [], risk = d.risk || [], audit = d.audit || [];
+        fees = d.fees || [], risk = d.risk || [], audit = d.audit || [], refs = d.referrals || [];
   const reconFails = recon.filter((r) => r.status !== "PASS").length;
   S = { entities: accts.length, suspended: accts.filter((a) => a.status === "SUSPENDED").length,
-        pending: appr.length, reconFails, audit: audit.length };
+        pending: appr.length, reconFails, audit: audit.length, refUnpaid: refs.length };
   loadStats();
+  el("opsUpdated").textContent = new Date().toLocaleTimeString();
 
   el("reconBadge").textContent = reconFails ? `${reconFails} FAIL` : "ALL PASS";
   el("reconBadge").style.color = reconFails ? "var(--coral)" : "var(--phos)";
@@ -406,11 +446,15 @@ async function refreshDemo() {
   el("apprCount").textContent = `${appr.length} pending`;
   el("approvals").innerHTML = appr.length ? `<table><thead><tr><th>When</th><th>Entity</th><th>Dir</th><th>Cur</th><th>Amount</th></tr></thead><tbody>${
     appr.map((r) => `<tr><td>${new Date(r.created_at).toLocaleTimeString()}</td><td>${(r.external_id || "—").slice(0, 14)}</td><td class="${r.direction === "DEPOSIT" ? "up" : "down"}">${r.direction}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.amount)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No pending wallet requests</div>`;
+  mirrorText("apprCount", "apprCount2");
+  mirrorHtml("approvals", "approvalsMirror");
 
   const wdq = d.withdrawal_queue || [];
   el("wdqCount").textContent = `${wdq.filter((w) => !w.confirmed_at).length} open`;
   el("withdrawQueue").innerHTML = wdq.length ? `<table><thead><tr><th>Request</th><th>Cur</th><th>Amt</th><th>To</th><th>Stage</th></tr></thead><tbody>${
     wdq.map((w) => `<tr><td class="mono-num">${escH((w.pub_id || "").slice(0, 10))}</td><td>${escH(w.currency)}</td><td class="mono-num">${fmt(w.amount, 4)}</td><td class="mono-num">${escH((w.to_address || "").slice(0, 14))}</td><td>${w.confirmed_at ? "confirmed" : w.broadcast_txid ? "broadcast" : w.signing_claimed_at ? "claimed" : "queued"}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No signer queue items</div>`;
+  mirrorText("wdqCount", "wdqCount2");
+  mirrorHtml("withdrawQueue", "withdrawQueueMirror");
 
   el("acctCount").textContent = `${accts.length}`;
   el("accounts").innerHTML = `<table><thead><tr><th>External ID</th><th>Type</th><th>Status</th></tr></thead><tbody>${
@@ -427,11 +471,12 @@ async function refreshDemo() {
     audit.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td class="amber">${r.action}</td><td>${(r.target || "").slice(0, 18)}</td><td style="color:var(--ink-dim)">${r.detail ? JSON.stringify(r.detail).slice(0, 60) : ""}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No admin actions yet</div>`;
 
   // referral payouts (read-only)
-  const refs = d.referrals || [];
   S.refUnpaid = refs.length; loadStats();
   el("refCount").textContent = refs.length ? `${refs.length} owed` : "all settled";
   el("referrals").innerHTML = refs.length ? `<table><thead><tr><th>Referrer</th><th>Cur</th><th>Unpaid</th></tr></thead><tbody>${
     refs.map((r) => `<tr><td>${(r.label || "—").slice(0, 18)}</td><td>${r.currency}</td><td class="mono-num">${fmt(r.total, 4)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No unpaid referral earnings</div>`;
+  mirrorText("refCount", "refCount2");
+  mirrorHtml("referrals", "referralsMirror");
 
   const chains = d.chains || [], deposits = d.chain_deposits || [];
   el("chainCount").textContent = `${chains.length} chains`;

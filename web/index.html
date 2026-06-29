@@ -46,12 +46,20 @@
 <div id="app">
   <header>
     <span class="brand">OUTCRY</span>
+    <nav class="product-nav" id="productNav" aria-label="Products">
+      <button data-product="spot" class="on">Spot</button>
+      <button data-product="perp">Futures</button>
+      <button data-product="margin">Margin</button>
+      <button data-product="stake">Earn</button>
+    </nav>
     <div class="sym-pick" id="symPick"></div>
     <div class="ticker"><span class="px mono-num" id="lastPx">—</span><span class="meta" id="tickMeta">spread —</span></div>
     <span class="spacer"></span>
     <span class="conn"><span class="dot off" id="connDot"></span><span id="connTxt">connecting</span></span>
     <span class="who">⬢ <b id="whoami">—</b></span>
-    <button class="swap" id="acctBtn">⚙ Account</button>
+    <button class="top-action" id="walletBtn">Wallet</button>
+    <button class="top-action" id="devBtn">API</button>
+    <button class="top-action" id="acctBtn">Account</button>
     <button class="swap" id="logout">Logout</button>
   </header>
 
@@ -117,7 +125,7 @@
       <div class="panel__b" id="tape" style="flex:none;height:150px"></div>
     </section>
 
-    <!-- RIGHT: ticket + wallet -->
+    <!-- RIGHT: order ticket -->
     <section class="panel" id="right">
       <div class="panel__h"><span class="label">Order Entry</span><span class="label" id="ticketSym"></span></div>
       <div class="panel__b" style="overflow-y:auto">
@@ -135,48 +143,10 @@
           </div>
         </div>
         <button class="submit buy" id="place">Place Buy Order</button>
-        <div class="wallet">
-          <span class="label">Wallet · request</span>
-          <div class="row2">
-            <select id="wDir"><option value="DEPOSIT">Deposit</option><option value="WITHDRAWAL">Withdraw</option></select>
-            <select id="wCur"><option>EUR</option><option>BTC</option></select>
-            <input id="wAmt" class="mono-num" type="number" step="1" value="100" />
-          </div>
-          <button id="wGo">Submit request →</button>
-        </div>
-        <div class="feature-rail">
-          <div class="feature-rail__h">
-            <span class="label">Advanced products</span>
-            <span class="label amber">pure SQL</span>
-          </div>
-          <button class="feature-card" data-open-account="perp">
-            <span>
-              <b>Perpetual Futures</b>
-              <small>BTC-PERP · mark price · funding · liquidation</small>
-            </span>
-            <em>Open</em>
-          </button>
-          <button class="feature-card" data-open-account="margin">
-            <span>
-              <b>Spot Margin</b>
-              <small>Borrow/repay · health · cross-margin risk</small>
-            </span>
-            <em>Manage</em>
-          </button>
-          <button class="feature-card" data-open-account="stake">
-            <span>
-              <b>Staking</b>
-              <small>APR pools · rewards · unbonding queue</small>
-            </span>
-            <em>Stake</em>
-          </button>
-          <button class="feature-card" data-open-account="dep">
-            <span>
-              <b>On-chain Deposits</b>
-              <small>Watched addresses · confirmed credits</small>
-            </span>
-            <em>Watch</em>
-          </button>
+        <div class="ticket-foot">
+          <button class="link-action" data-open-wallet="dep">Deposit</button>
+          <button class="link-action" data-open-wallet="wd">Withdraw</button>
+          <button class="link-action" data-product-jump="margin">Borrow</button>
         </div>
       </div>
     </section>
@@ -196,19 +166,51 @@
   </main>
 </div>
 
+<!-- ░░ PRODUCT WORKSPACE ░░ -->
+<div id="productModal" class="modal" hidden>
+  <div class="modal__box modal__box--wide">
+    <div class="modal__h">
+      <div class="subtabs" id="productTabs">
+        <button data-ptab="perp" class="on">Futures</button>
+        <button data-ptab="margin">Margin</button>
+        <button data-ptab="stake">Earn</button>
+      </div>
+      <button class="swap" id="productClose">✕ Close</button>
+    </div>
+    <div class="modal__b" id="productBody"></div>
+  </div>
+</div>
+
+<!-- ░░ WALLET MODAL ░░ -->
+<div id="walletModal" class="modal" hidden>
+  <div class="modal__box modal__box--wide">
+    <div class="modal__h">
+      <div class="subtabs" id="walletTabs">
+        <button data-wtab="dep" class="on">Deposit</button>
+        <button data-wtab="wd">Withdraw</button>
+      </div>
+      <button class="swap" id="walletClose">✕ Close</button>
+    </div>
+    <div class="modal__b" id="walletBody"></div>
+  </div>
+</div>
+
+<!-- ░░ DEVELOPER MODAL ░░ -->
+<div id="devModal" class="modal" hidden>
+  <div class="modal__box modal__box--wide">
+    <div class="modal__h">
+      <span class="label">Developer API</span>
+      <button class="swap" id="devClose">✕ Close</button>
+    </div>
+    <div class="modal__b" id="devBody"></div>
+  </div>
+</div>
+
 <!-- ░░ ACCOUNT MODAL ░░ -->
 <div id="acctModal" class="modal" hidden>
   <div class="modal__box">
     <div class="modal__h">
-      <div class="subtabs" id="acctTabs">
-        <button data-atab="keys" class="on">API Keys</button>
-        <button data-atab="ref">Referral</button>
-        <button data-atab="wd">Withdraw</button>
-        <button data-atab="dep">Deposits</button>
-        <button data-atab="stake">Stake</button>
-        <button data-atab="margin">Margin</button>
-        <button data-atab="perp">Perps</button>
-      </div>
+      <span class="label">Account</span>
       <button class="swap" id="acctClose">✕ Close</button>
     </div>
     <div class="modal__b" id="acctBody"></div>
