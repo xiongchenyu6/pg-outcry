@@ -330,3 +330,47 @@ revoke execute on function
   decode_tron_trigger_transfer(text), poll_tron_token_memo(text), poll_solana_token_memo(text)
   from public, anon, authenticated;
 grant execute on function poll_tron_token_memo(text), poll_solana_token_memo(text) to service_role;
+
+-- ════════════════════════ withdrawal cooling = chain irreversibility time ═══════
+-- Replace the fixed 24h address-cooling with each chain's on-chain finality (the time
+-- after which a tx can't be rolled back), inferred from the destination address.
+alter table chain add column if not exists finality_seconds int not null default 180;
+update chain set finality_seconds = case name
+  when 'ethereum-sepolia' then 180   -- ~practical Sepolia finality
+  when 'tron-nile'        then 60    -- ~19 SR confirmations
+  when 'solana-testnet'   then 15    -- ~finalized commitment
+  else 180 end;
+
+-- chain inferred from address form: 0x→evm, T→tron, else→solana
+create or replace function _addr_finality_seconds(addr text) returns int
+  language sql stable set search_path = public, pg_temp as $$
+  select coalesce((select finality_seconds from chain where name =
+    case when left(addr,2)='0x' then 'ethereum-sepolia'
+         when left(addr,1)='T'  then 'tron-nile'
+         else 'solana-testnet' end), 180);
+$$;
+
+create or replace function add_withdrawal_address(currency_param text, address_param text,
+                                                  label_param text default null)
+  returns json language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare eid bigint := current_app_entity_id(); r withdrawal_address%rowtype; fin int;
+begin
+  if eid is null then raise exception 'not_authenticated'; end if;
+  if coalesce(trim(address_param), '') = '' then raise exception 'address_required'; end if;
+  fin := public._addr_finality_seconds(address_param);
+  insert into withdrawal_address(app_entity_id, currency, address, label, active_at)
+    values (eid, currency_param, address_param, label_param, now() + make_interval(secs => fin))
+    on conflict (app_entity_id, currency, address) do update
+      set removed_at = null, label = excluded.label
+    returning * into r;
+  return json_build_object('id', r.id, 'currency', r.currency, 'address', r.address,
+    'active_at', r.active_at, 'note', 'usable once on-chain-irreversible (active_at)');
+end $$;
+
+-- recompute cooling for existing still-cooling addresses to the new finality basis
+update withdrawal_address w set active_at = w.created_at + make_interval(secs => public._addr_finality_seconds(w.address))
+  where w.active_at > now();
+
+grant execute on function add_withdrawal_address(text, text, text) to authenticated;
+revoke execute on function _addr_finality_seconds(text) from public, anon, authenticated;
