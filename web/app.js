@@ -718,14 +718,14 @@ async function renderWithdraw(body) {
   const detail = (asset && opt) ? `<div class="acct-sec"><h4>3 · Withdraw ${wdCoin} · ${opt.net}</h4>
       <div class="empty">Debits your <b>${cur}</b> balance · available <b>${fmt(bal, 6)}</b></div>
       <div class="acct-row">
-        <select id="wdAddr" class="grow">${usable.map((a) => `<option value="${escH(a.address)}">${escH(a.address)}${a.label ? " · " + escH(a.label) : ""}</option>`).join("") || '<option value="">— whitelist & cool an address below —</option>'}</select>
+        <select id="wdAddr" class="grow">${usable.map((a) => `<option value="${escH(a.address)}">${escH(a.address)}${a.label ? " · " + escH(a.label) : ""}</option>`).join("") || '<option value="">— whitelist an address below —</option>'}</select>
         <input id="wdAmt" type="number" step="0.0001" placeholder="amount" style="max-width:130px"/>
         <button class="btn" id="wdGo">Withdraw</button></div>
       <div class="empty">Sends ${wdCoin} on ${opt.net} from the in-DB signer (testnet). Subject to rolling limits + admin approval.</div>
       <div class="acct-row" style="margin-top:10px"><input id="waAddr" class="grow mono-num" placeholder="destination ${wdCoin} address"/><input id="waLabel" placeholder="label"/><button class="btn" id="waAdd">Whitelist</button></div>
       ${mine.length ? `<table><thead><tr><th>Address</th><th>Status</th><th></th></tr></thead><tbody>${
         mine.map((a) => `<tr><td class="mono-num">${escH(a.address)}</td><td>${a.usable ? '<span class="up">usable</span>' : '<span class="amber">cooling…</span>'}</td><td><button class="x-btn" data-rmaddr="${a.id}">remove</button></td></tr>`).join("")}</tbody></table>`
-        : `<div class="empty">No whitelisted ${cur} addresses yet — add one (cools until on-chain-final).</div>`}</div>` : "";
+        : `<div class="empty">No whitelisted ${cur} addresses yet — add one.</div>`}</div>` : "";
 
   body.innerHTML = `<div class="acct">
     <div class="acct-sec"><h4>1 · Select coin</h4>
@@ -744,12 +744,12 @@ async function renderWithdraw(body) {
   const wa = el("waAdd");
   if (wa) wa.onclick = async () => {
     const { error } = await sb.rpc("add_withdrawal_address", { currency_param: cur, address_param: el("waAddr").value.trim(), label_param: el("waLabel").value || null });
-    if (error) toast(error.message, "err"); else { toast("Address whitelisted — usable once on-chain-final", "warn"); renderWithdraw(body); }
+    if (error) toast(error.message, "err"); else { toast("Address whitelisted — usable now", "warn"); renderWithdraw(body); }
   };
   const wg = el("wdGo");
   if (wg) wg.onclick = async () => {
     const addr = el("wdAddr").value;
-    if (!addr) return toast("whitelist & cool an address first", "err");
+    if (!addr) return toast("whitelist an address first", "err");
     const { error } = await sb.rpc("request_withdrawal_to", { currency_param: cur, amount_param: +el("wdAmt").value, to_address_param: addr });
     if (error) toast(error.message.replace(/_/g, " "), "err");
     else { toast("Withdrawal requested (pending approval)", "warn"); refreshBlotter(); }

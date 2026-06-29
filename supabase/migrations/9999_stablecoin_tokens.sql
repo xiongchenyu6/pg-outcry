@@ -377,23 +377,22 @@ create or replace function add_withdrawal_address(currency_param text, address_p
                                                   label_param text default null)
   returns json language plpgsql security definer set search_path = public, pg_temp
 as $$
-declare eid bigint := current_app_entity_id(); r withdrawal_address%rowtype; fin int;
+declare eid bigint := current_app_entity_id(); r withdrawal_address%rowtype;
 begin
   if eid is null then raise exception 'not_authenticated'; end if;
   if coalesce(trim(address_param), '') = '' then raise exception 'address_required'; end if;
-  fin := public._addr_finality_seconds(address_param);
+  -- no cooling: whitelisted addresses are usable immediately
   insert into withdrawal_address(app_entity_id, currency, address, label, active_at)
-    values (eid, currency_param, address_param, label_param, now() + make_interval(secs => fin))
+    values (eid, currency_param, address_param, label_param, now())
     on conflict (app_entity_id, currency, address) do update
       set removed_at = null, label = excluded.label
     returning * into r;
   return json_build_object('id', r.id, 'currency', r.currency, 'address', r.address,
-    'active_at', r.active_at, 'note', 'usable once on-chain-irreversible (active_at)');
+    'active_at', r.active_at, 'note', 'usable immediately');
 end $$;
 
--- recompute cooling for existing still-cooling addresses to the new finality basis
-update withdrawal_address w set active_at = w.created_at + make_interval(secs => public._addr_finality_seconds(w.address))
-  where w.active_at > now();
+-- make all existing whitelisted addresses usable now (drop any pending cooling)
+update withdrawal_address set active_at = now() where active_at > now();
 
 grant execute on function add_withdrawal_address(text, text, text) to authenticated;
 revoke execute on function _addr_finality_seconds(text) from public, anon, authenticated;
