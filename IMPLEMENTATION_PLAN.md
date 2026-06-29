@@ -44,7 +44,16 @@ e2e (signup → 3 addresses, idempotent, watched). Applied to hosted.
 - Enable `supabase/chain/pollers.sql` on hosted: set chain.rpc_url (public endpoints),
   chain_asset mappings; pg_cron poll. Add native-ETH detection (block scan) or use a
   testnet ERC-20. Solana/Tron via existing decoders.
-**Status**: Not Started.
+**Status**: ✅ Complete — `supabase/migrations/9990_chain_balance_poller.sql`. Chose a
+uniform BALANCE-DELTA model (native ETH/SOL/TRX): per tick, fetch each watched
+address's on-chain balance over the `http` extension and credit the increase via
+process_transfer. `http` egress VERIFIED from hosted Supabase (fetched live Sepolia
+block + balances). decode_evm/solana/tron_balance fixture-tested in
+test-pollers-decode.sh. Live e2e: poll_native_evm credited the real Sepolia burn-addr
+balance, reconcile clean; credit_balance_delta idempotent (credited→no_change→delta).
+Native assets mapped to EUR (18/9/6 decimals). RPCs configured + enabled + pg_cron
+(30s) on hosted (inert in CI: no chain enabled). Token log-pollers (pollers.sql) remain
+for ERC-20/TRC-20/SPL.
 
 ## Stage 4: Withdrawals — in-DB sign + broadcast
 **Goal**: request → in-DB sign → broadcast via pg_net, all on testnet.

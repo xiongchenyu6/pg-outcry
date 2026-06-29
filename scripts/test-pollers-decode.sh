@@ -105,6 +105,19 @@ check "solana: lamports gained read via accountKeys[].pubkey (objects, not strin
 sol_missing="$(q "select coalesce(decode_solana_credit('${SOL_TX}'::jsonb, 'NotInTx')::text, 'NULL');")"
 check "solana: returns NULL when address not in accountKeys" "NULL" "$sol_missing"
 
+# ── Native balance decoders (migration 9990 — present after db reset) ────────────
+# eth_getBalance result hex wei (0xb1a2bc2ec50000 = 5e16 = 0.05 ETH)
+evm_bal="$(q "select trim_scale(decode_evm_balance('{\"result\":\"0xb1a2bc2ec50000\"}'::jsonb))::text;")"
+check "evm balance: hex wei decoded (0.05 ETH)" "50000000000000000" "$evm_bal"
+# getBalance result.value lamports
+sol_bal="$(q "select decode_solana_balance('{\"result\":{\"context\":{\"slot\":1},\"value\":2500000000}}'::jsonb)::text;")"
+check "solana balance: result.value lamports" "2500000000" "$sol_bal"
+# TronGrid /v1/accounts data[0].balance sun; inactive account [] -> 0
+tron_bal="$(q "select decode_tron_balance('{\"data\":[{\"balance\":1500000}]}'::jsonb)::text;")"
+check "tron balance: data[0].balance sun" "1500000" "$tron_bal"
+tron_bal0="$(q "select decode_tron_balance('{\"data\":[]}'::jsonb)::text;")"
+check "tron balance: inactive account -> 0" "0" "$tron_bal0"
+
 echo "----------------------------------------"
 if [[ "$fails" -gt 0 ]]; then
   echo "FAILED: $fails assertion(s)"
