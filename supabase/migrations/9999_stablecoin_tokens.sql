@@ -242,3 +242,91 @@ revoke execute on function
   public.sol_build_signed_token_tx(bytea,bytea,bytea,numeric,int,bytea), poll_solana_memo(text)
   from public, anon, authenticated;
 grant execute on function poll_solana_memo(text) to service_role;
+
+-- ════════════════════════ token (TRC-20 / SPL) memo deposit detection ═══════════
+-- Native TRX/SOL memo deposits credit via 9998/poll_solana_memo; these add USDT
+-- (TRC-20) + USDC (SPL) deposits to the shared treasury address, attributed by memo.
+
+-- Tron TRC-20: decode transfer(address,uint256) calldata (a9059cbb ++ to ++ amount).
+create or replace function decode_tron_trigger_transfer(data text)
+  returns table(to_hex text, amount_raw numeric) language sql immutable as $$
+  select substr(data, 33, 40), hex_to_numeric(substr(data, 73, 64))
+  where data ~* '^a9059cbb' and length(data) >= 136;
+$$;
+
+create or replace function poll_tron_token_memo(chain_param text) returns int
+  language plpgsql security definer set search_path = public, extensions, pg_temp as $$
+declare cfg chain%rowtype; shared text; shared_hex20 text; resp jsonb; t jsonb; c jsonb; cval jsonb;
+        contract text; cur text; dec int; d record; memo text; n int := 0;
+begin
+  select * into cfg from chain where name = chain_param and enabled and kind = 'tron' and rpc_url is not null;
+  if not found then return 0; end if;
+  shared := public.treasury_address(chain_param);
+  shared_hex20 := lower(encode(substr(public.base58_decode(shared), 2, 20), 'hex'));
+  resp := (extensions.http_get(cfg.rpc_url || '/v1/accounts/' || shared || '/transactions?limit=50&only_confirmed=true')).content::jsonb;
+  for t in select * from jsonb_array_elements(coalesce(resp->'data', '[]'::jsonb)) loop
+    c := t->'raw_data'->'contract'->0;
+    if c->>'type' <> 'TriggerSmartContract' then continue; end if;
+    if (t->'raw_data'->>'data') is null then continue; end if;
+    cval := c->'parameter'->'value';
+    contract := cval->>'contract_address';
+    select currency, decimals into cur, dec from chain_asset where chain = chain_param and token = contract;
+    if cur is null then continue; end if;
+    for d in select * from decode_tron_trigger_transfer(cval->>'data') loop
+      if d.to_hex <> shared_hex20 then continue; end if;
+      memo := convert_from(decode(t->'raw_data'->>'data', 'hex'), 'UTF8');
+      if credit_memo_deposit(chain_param, t->>'txID', 0, memo, cur, d.amount_raw / power(10, dec), 1) = 'credited'
+        then n := n + 1; end if;
+    end loop;
+  end loop;
+  return n;
+end $$;
+
+create or replace function poll_solana_token_memo(chain_param text) returns int
+  language plpgsql security definer set search_path = public, extensions, pg_temp as $$
+declare cfg chain%rowtype; shared text; shared_pk bytea; a record; mint bytea; ata text; sigs jsonb; s jsonb;
+        tx jsonb; pre numeric; post numeric; bal jsonb; memo text; ix jsonb; amt numeric; n int := 0;
+begin
+  select * into cfg from chain where name = chain_param and enabled and kind = 'solana' and rpc_url is not null;
+  if not found then return 0; end if;
+  shared := public.treasury_address(chain_param); shared_pk := public.base58_decode(shared);
+  for a in select token, currency, decimals from chain_asset where chain = chain_param and token <> 'native' loop
+    mint := public.base58_decode(a.token);
+    ata := public.base58_encode(public.sol_ata(shared_pk, mint));
+    sigs := (extensions.http_post(cfg.rpc_url, jsonb_build_object('jsonrpc','2.0','id',1,'method','getSignaturesForAddress',
+      'params', jsonb_build_array(ata, jsonb_build_object('limit', 25)))::text, 'application/json')).content::jsonb -> 'result';
+    for s in select * from jsonb_array_elements(coalesce(sigs, '[]'::jsonb)) loop
+      if (s->>'confirmationStatus') <> 'finalized' or s->'err' is not null then continue; end if;
+      tx := (extensions.http_post(cfg.rpc_url, jsonb_build_object('jsonrpc','2.0','id',1,'method','getTransaction',
+        'params', jsonb_build_array(s->>'signature', jsonb_build_object('encoding','jsonParsed','maxSupportedTransactionVersion',0)))::text,
+        'application/json')).content::jsonb -> 'result';
+      pre := 0; post := 0;
+      for bal in select * from jsonb_array_elements(coalesce(tx->'meta'->'preTokenBalances','[]'::jsonb)) loop
+        if bal->>'mint' = a.token and bal->>'owner' = shared then pre := (bal->'uiTokenAmount'->>'amount')::numeric; end if;
+      end loop;
+      for bal in select * from jsonb_array_elements(coalesce(tx->'meta'->'postTokenBalances','[]'::jsonb)) loop
+        if bal->>'mint' = a.token and bal->>'owner' = shared then post := (bal->'uiTokenAmount'->>'amount')::numeric; end if;
+      end loop;
+      amt := post - pre;
+      if amt <= 0 then continue; end if;
+      memo := null;
+      for ix in select * from jsonb_array_elements(coalesce(tx->'transaction'->'message'->'instructions','[]'::jsonb)) loop
+        if ix->>'program' = 'spl-memo' then memo := ix->>'parsed'; exit; end if;
+      end loop;
+      if memo is null then continue; end if;
+      if credit_memo_deposit(chain_param, s->>'signature', 0, memo, a.currency, amt / power(10, a.decimals), 1) = 'credited'
+        then n := n + 1; end if;
+    end loop;
+  end loop;
+  return n;
+end $$;
+
+do $$ begin
+  perform cron.schedule('poll-tron-token-memo',   '30 seconds', 'select poll_tron_token_memo(''tron-nile'')');
+  perform cron.schedule('poll-solana-token-memo', '30 seconds', 'select poll_solana_token_memo(''solana-testnet'')');
+exception when others then null; end $$;
+
+revoke execute on function
+  decode_tron_trigger_transfer(text), poll_tron_token_memo(text), poll_solana_token_memo(text)
+  from public, anon, authenticated;
+grant execute on function poll_tron_token_memo(text), poll_solana_token_memo(text) to service_role;
