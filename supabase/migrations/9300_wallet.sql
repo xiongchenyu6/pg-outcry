@@ -85,13 +85,15 @@ begin
   if r.direction = 'DEPOSIT' then
     tr := process_transfer('DEPOSIT', 'MASTER', r.amount, r.currency, pub,
                            'wallet:' || r.pub_id, 'wallet deposit', null);
-  else  -- WITHDRAWAL: debit user -> MASTER. create_transfer reduces `amount` but
-        -- only releases reservations for INSTRUMENT_* types, so free the hold here.
-    tr := create_transfer('WITHDRAWAL', pub, r.amount, r.currency, 'MASTER',
-                          'wallet:' || r.pub_id, 'wallet withdrawal');
+  else  -- WITHDRAWAL: debit user -> MASTER. create_transfer reduces `amount` but only
+        -- releases reservations for INSTRUMENT_* types, so free the hold HERE — and BEFORE
+        -- the debit, else a full-balance withdrawal transiently leaves amount_reserved >
+        -- amount (violates currency_account_check).
     update currency_account
       set amount_reserved = greatest(amount_reserved - r.amount, 0), updated_at = current_timestamp
       where app_entity_id = r.app_entity_id and currency_name = r.currency;
+    tr := create_transfer('WITHDRAWAL', pub, r.amount, r.currency, 'MASTER',
+                          'wallet:' || r.pub_id, 'wallet withdrawal');
   end if;
 
   update wallet_request

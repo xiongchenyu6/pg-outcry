@@ -79,12 +79,13 @@ ok(Array.isArray(dep) && dep.some(d => d.txid === "0xT1" && d.credited_at), "dep
 console.log("── Withdrawal send queue ──");
 // Simulate the external signer with service RPCs (no real chain in CI). The DB
 // hands out approved+whitelisted withdrawals once; a real signer would sign+broadcast.
-const S = await signup("S"); await fund(S.pub, "EUR", 100000);
+// fund exactly the withdrawal amount so this is a FULL-balance withdrawal (regression:
+// approve must release the reservation BEFORE the debit, else reserved transiently > amount).
+const S = await signup("S"); await fund(S.pub, "EUR", 100);
 await rpc(S.token, "add_withdrawal_address", { currency_param: "EUR", address_param: "0xQUEUE", label_param: "hot" });
-execSync(`psql "${PGURL}" -tAqc "update withdrawal_address set active_at=now()-interval '1 min' where address='0xQUEUE';"`);
 const wreq = (await rpc(S.token, "request_withdrawal_to", { currency_param: "EUR", amount_param: 100, to_address_param: "0xQUEUE" })).body;
 ok(typeof wreq === "string" && wreq.length > 0, "request_withdrawal_to returns a request pub_id");
-ok((await svc("approve_wallet_request", { request_pub_param: wreq })).status < 300, "admin approves the withdrawal (ledger settled)");
+ok((await svc("approve_wallet_request", { request_pub_param: wreq })).status < 300, "admin approves full-balance withdrawal (reserve released before debit, ledger settled)");
 const claim1 = (await svc("next_withdrawal_to_sign")).body;
 ok(claim1 && claim1.pub_id === wreq && claim1.to_address === "0xQUEUE" && Number(claim1.amount) === 100,
   "next_withdrawal_to_sign returns the approved withdrawal");
