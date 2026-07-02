@@ -48,10 +48,12 @@ present but `enabled = false`. To turn them on: set `enabled = true`, export
 `additional_redirect_urls` (already set to `:4173`). Email/password works out of the box.
 
 ## Funding a demo account
-A freshly signed-up user has no funds (RLS-scoped). Either submit a wallet **deposit
-request** in the app (an admin approves it via the back-office `approve_wallet_request`),
-For demo K-line history (synthetic back-dated random walk): `./scripts/seed-candles.sh`.
-Or fund directly with the service key:
+A freshly signed-up user has no funds (RLS-scoped). Use **Wallet → Deposit** and
+send testnet assets to the assigned address/memo; the SQL watcher credits detected
+testnet transfers. For demo K-line history (synthetic back-dated random walk):
+`./scripts/seed-candles.sh`.
+
+For local development only, you can also fund directly with the service key:
 `process_transfer('DEPOSIT','MASTER', amount, currency, <user app_entity pub_id>, 'r','d', null)`.
 
 ## Back-office (admin)

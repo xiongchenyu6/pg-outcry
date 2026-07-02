@@ -108,18 +108,6 @@ async function enterTerminal(session) {
   await selectSymbol(SYM);
   subscribePrivate();
   await refreshBlotter();
-  if (_q.get("demo") === "1" && !el("faucetBtn")) {   // public demo: let visitors self-fund to trade
-    const b = document.createElement("button");
-    b.id = "faucetBtn"; b.className = "swap"; b.textContent = "💰 Demo funds";
-    b.onclick = async () => { const { error } = await sb.rpc("demo_faucet"); if (error) toast(error.message, "err"); else { toast("Demo funds added — you can trade now"); refreshBlotter(); } };
-    el("logout").parentNode.insertBefore(b, el("logout"));
-  }
-  if (_q.get("demo") === "1" && !el("adminLink")) {   // jump to the read-only back-office demo
-    const a = document.createElement("a");
-    a.id = "adminLink"; a.className = "swap"; a.textContent = "⚙ Back-office";
-    a.href = "admin.html" + location.search; a.target = "_blank"; a.rel = "noopener";
-    el("logout").parentNode.insertBefore(a, el("logout"));
-  }
 }
 
 async function loadSymbols() {
@@ -606,7 +594,7 @@ async function updateBalances() {
   const cells = (cash || []).filter((c) => +c.amount || +c.amount_reserved).map((c) =>
     `<div class="bal-cell"><span class="ccy">${c.currency}</span><span class="amt">${fmt(c.available, 4)}</span>${
       +c.amount_reserved ? `<span class="resv">+${fmt(c.amount_reserved, 4)} rsv</span>` : ""}</div>`);
-  rows.innerHTML = cells.length ? cells.join("") : `<span class="empty">no funds yet — click 💰 Demo funds</span>`;
+  rows.innerHTML = cells.length ? cells.join("") : `<span class="empty">no funds yet — use Wallet → Deposit and send testnet assets</span>`;
 }
 
 async function refreshBlotter() {
@@ -632,7 +620,7 @@ async function refreshBlotter() {
     el("blotCount").textContent = `${(cash?.length || 0)} currencies`;
     body.innerHTML = `<table><thead><tr><th>Asset</th><th>Total</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${
       (cash || []).map((c) => `<tr><td>${c.currency}</td><td class="mono-num">${fmt(c.amount, 4)}</td><td class="mono-num amber">${fmt(c.amount_reserved, 4)}</td><td class="mono-num up">${fmt(c.available, 4)}</td></tr>`).join("")
-      || `<tr><td colspan="4" class="empty">No balances — request a deposit (admin approves)</td></tr>`}</tbody></table>`;
+      || `<tr><td colspan="4" class="empty">No balances — use Wallet → Deposit and send testnet assets to your assigned address</td></tr>`}</tbody></table>`;
   } else {
     const { data } = await sb.from("wallet_request").select("direction,currency,amount,status,created_at").order("created_at", { ascending: false }).limit(30);
     el("blotCount").textContent = `${data?.length || 0} requests`;

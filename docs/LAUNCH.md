@@ -10,9 +10,9 @@ Internal checklist + post drafts for announcing pg-outcry. Not part of the produ
 - [x] CI green (build + 8 smokes on a clean `db reset`); CLI version pinned to avoid release-API rate-limit flakes; issue/PR templates
 - [x] GitHub Pages workflow (static frontend) — `.github/workflows/pages.yml`; live + serving latest commit
 - [x] **Hero + admin screenshots** rendered (web/docs/hero.png, admin.png via scripts/render-*.mjs); optional: a GIF still needs a browser capture
-- [x] **Live demo — trading terminal** → hosted Supabase (Seoul), seeded, autoconfirm on, faucet; link in README.
-      Verified end-to-end: signup→faucet→LIMIT + MARKET buy/sell fill→balances visible.
-- [x] **Live demo — back-office** (read-only) → `admin.html?...&demo=1` via `demo_admin_overview()` (anon-safe; no service_role exposed). Verified: reconciliation 5/5 PASS.
+- [x] **Live demo — trading terminal** → hosted Supabase (Seoul), seeded, autoconfirm on, testnet deposits only; link in README.
+      Verified end-to-end: signup→Wallet Deposit address→testnet credit→LIMIT + MARKET buy/sell fill→balances visible.
+- [x] **Live demo — back-office** → `admin.html?...` with Supabase Auth + test-open admin RBAC. Verified: reconciliation 5/5 PASS.
 - [x] **GitHub OAuth** enabled (hosted): site_url + redirect allow-list set; GitHub login round-trips. Email/password also works.
 - [x] Public market data anon-readable (order book / tape); per-user RLS verified.
 
